@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use libadwaita::prelude::*;
@@ -66,9 +67,11 @@ fn drag_sign_y(corner: Corner) -> i32 {
 #[derive(Default)]
 struct DragState {
     active: bool,
-    start_x: i32,
-    start_y: i32,
+    press_x: f64,
+    press_y: f64,
     corner: Corner,
+    pending: Option<(i32, i32)>,
+    tick: Option<gtk4::TickCallbackId>,
 }
 
 pub fn build(app: &libadwaita::Application) {
@@ -142,7 +145,21 @@ pub fn build(app: &libadwaita::Application) {
     header.append(&close_btn);
     root.append(&header);
 
-    // Drag gesture for layer shell live movement
+    // Drag gesture for layer shell live movement.
+    //
+    // Margins are derived from the pointer's *current* widget coordinates and
+    // the window's *current* margin on every event. The pointer's current
+    // position is (press + gesture offset) and the margin is re-read, so moving
+    // the window under the pointer never feeds back into the delta — the old
+    // start-margin accumulation corrupted itself the moment the window tracked
+    // the pointer and made the drag stall or jitter.
+    //
+    // Updates are throttled to one set_margin per compositor frame via a tick
+    // callback: with multiple requests per frame, the requested margin runs
+    // ahead of the position the compositor has actually applied, and the next
+    // event re-bases its delta off that too-far margin — the window overshoots
+    // and wobbles around the pointer. One request per frame keeps requested
+    // == applied, so every delta lands exactly on the pointer.
     let drag = gtk4::GestureDrag::new();
     drag.connect_drag_begin(gtk4::glib::clone!(
         #[strong]
@@ -151,15 +168,39 @@ pub fn build(app: &libadwaita::Application) {
         window,
         #[strong]
         on_layer_shell,
-        move |_g, _x, _y| {
+        move |_g, x, y| {
             let mut s = drag_state.borrow_mut();
             if !on_layer_shell || s.corner == Corner::Center {
                 return;
             }
-            if let (Some(h), Some(v)) = (h_edge(s.corner), v_edge(s.corner)) {
-                s.active = true;
-                s.start_x = window.margin(h);
-                s.start_y = window.margin(v);
+            s.active = true;
+            s.press_x = x;
+            s.press_y = y;
+            s.pending = None;
+            if s.tick.is_none() {
+                let tick = window.add_tick_callback(gtk4::glib::clone!(
+                    #[strong]
+                    drag_state,
+                    #[weak]
+                    window,
+                    #[upgrade_or]
+                    gtk4::glib::ControlFlow::Continue,
+                    move |_, _frame_clock| {
+                        let mut s = drag_state.borrow_mut();
+                        if let (Some(h), Some(v)) = (h_edge(s.corner), v_edge(s.corner))
+                            && let Some((mx, my)) = s.pending.take()
+                        {
+                            window.set_margin(h, mx);
+                            window.set_margin(v, my);
+                        }
+                        if s.active {
+                            gtk4::glib::ControlFlow::Continue
+                        } else {
+                            gtk4::glib::ControlFlow::Break
+                        }
+                    }
+                ));
+                s.tick = Some(tick);
             }
         }
     ));
@@ -170,17 +211,25 @@ pub fn build(app: &libadwaita::Application) {
         window,
         #[strong]
         on_layer_shell,
-        move |_g, x, y| {
-            let s = drag_state.borrow_mut();
+        move |_g, dx, dy| {
+            let mut s = drag_state.borrow_mut();
             if !on_layer_shell || !s.active || s.corner == Corner::Center {
                 return;
             }
-            if let (Some(h), Some(v)) = (h_edge(s.corner), v_edge(s.corner)) {
-                let margin_x = (s.start_x + x as i32 * drag_sign_x(s.corner)).max(0);
-                let margin_y = (s.start_y + y as i32 * drag_sign_y(s.corner)).max(0);
-                window.set_margin(h, margin_x);
-                window.set_margin(v, margin_y);
-            }
+            let (Some(h), Some(v)) = (h_edge(s.corner), v_edge(s.corner)) else {
+                return;
+            };
+            let x_now = s.press_x + dx;
+            let y_now = s.press_y + dy;
+            let margin_x = (window.margin(h) as f64
+                + (x_now - s.press_x) * drag_sign_x(s.corner) as f64)
+                .round()
+                .max(0.0) as i32;
+            let margin_y = (window.margin(v) as f64
+                + (y_now - s.press_y) * drag_sign_y(s.corner) as f64)
+                .round()
+                .max(0.0) as i32;
+            s.pending = Some((margin_x, margin_y));
         }
     ));
     drag.connect_drag_end(gtk4::glib::clone!(
@@ -192,23 +241,26 @@ pub fn build(app: &libadwaita::Application) {
         config,
         #[strong]
         on_layer_shell,
-        move |_g, _x, _y| {
+        move |_g, _dx, _dy| {
             let mut s = drag_state.borrow_mut();
             if !on_layer_shell || !s.active || s.corner == Corner::Center {
                 return;
             }
+            s.active = false;
+            if let Some(id) = s.tick.take() {
+                id.remove();
+            }
             if let (Some(h), Some(v)) = (h_edge(s.corner), v_edge(s.corner)) {
-                let margin_x = window.margin(h);
-                let margin_y = window.margin(v);
-                s.active = false;
-                {
-                    let mut cfg = config.borrow_mut();
-                    cfg.window.margin_x = margin_x;
-                    cfg.window.margin_y = margin_y;
-                }
-                if let Err(e) = config.borrow().save() {
-                    eprintln!("tomato: failed to save config: {e}");
-                }
+                let (margin_x, margin_y) =
+                    s.pending.take().unwrap_or_else(|| (window.margin(h), window.margin(v)));
+                window.set_margin(h, margin_x);
+                window.set_margin(v, margin_y);
+                let mut cfg = config.borrow_mut();
+                cfg.window.margin_x = margin_x;
+                cfg.window.margin_y = margin_y;
+            }
+            if let Err(e) = config.borrow().save() {
+                eprintln!("tomato: failed to save config: {e}");
             }
         }
     ));
@@ -241,7 +293,8 @@ pub fn build(app: &libadwaita::Application) {
     let timer = Rc::new(RefCell::new(Timer::new(&config.borrow().timer)));
     let tasks = Rc::new(RefCell::new(TodoStore::load()));
 
-    let timer_page_widget = timer_page::build(Rc::clone(&config), Rc::clone(&timer), Rc::clone(&tasks));
+    let timer_page_widget =
+        timer_page::build(Rc::clone(&config), Rc::clone(&timer), Rc::clone(&tasks));
     stack.add_named(&timer_page_widget, Some("timer"));
 
     let tasks_page_widget = tasks_page::build(Rc::clone(&tasks));
@@ -320,93 +373,125 @@ pub fn build(app: &libadwaita::Application) {
     // Keyboard Shortcuts
     let shortcut_controller = gtk4::ShortcutController::new();
 
-    add_shortcut(&shortcut_controller, "<Control>q", gtk4::glib::clone!(
-        #[weak]
-        window,
-        #[upgrade_or]
-        gtk4::glib::Propagation::Proceed,
-        move || {
-            window.close();
-            gtk4::glib::Propagation::Stop
-        }
-    ));
+    add_shortcut(
+        &shortcut_controller,
+        "<Control>q",
+        gtk4::glib::clone!(
+            #[weak]
+            window,
+            #[upgrade_or]
+            gtk4::glib::Propagation::Proceed,
+            move || {
+                window.close();
+                gtk4::glib::Propagation::Stop
+            }
+        ),
+    );
 
-    add_shortcut(&shortcut_controller, "Escape", gtk4::glib::clone!(
-        #[weak]
-        window,
-        #[upgrade_or]
-        gtk4::glib::Propagation::Proceed,
-        move || {
-            window.close();
-            gtk4::glib::Propagation::Stop
-        }
-    ));
+    add_shortcut(
+        &shortcut_controller,
+        "Escape",
+        gtk4::glib::clone!(
+            #[weak]
+            window,
+            #[upgrade_or]
+            gtk4::glib::Propagation::Proceed,
+            move || {
+                window.close();
+                gtk4::glib::Propagation::Stop
+            }
+        ),
+    );
 
-    add_shortcut(&shortcut_controller, "<Control>1", gtk4::glib::clone!(
-        #[weak]
-        timer_btn,
-        #[upgrade_or]
-        gtk4::glib::Propagation::Proceed,
-        move || {
-            timer_btn.set_active(true);
-            gtk4::glib::Propagation::Stop
-        }
-    ));
+    add_shortcut(
+        &shortcut_controller,
+        "<Control>1",
+        gtk4::glib::clone!(
+            #[weak]
+            timer_btn,
+            #[upgrade_or]
+            gtk4::glib::Propagation::Proceed,
+            move || {
+                timer_btn.set_active(true);
+                gtk4::glib::Propagation::Stop
+            }
+        ),
+    );
 
-    add_shortcut(&shortcut_controller, "<Control>2", gtk4::glib::clone!(
-        #[weak]
-        tasks_btn,
-        #[upgrade_or]
-        gtk4::glib::Propagation::Proceed,
-        move || {
-            tasks_btn.set_active(true);
-            gtk4::glib::Propagation::Stop
-        }
-    ));
+    add_shortcut(
+        &shortcut_controller,
+        "<Control>2",
+        gtk4::glib::clone!(
+            #[weak]
+            tasks_btn,
+            #[upgrade_or]
+            gtk4::glib::Propagation::Proceed,
+            move || {
+                tasks_btn.set_active(true);
+                gtk4::glib::Propagation::Stop
+            }
+        ),
+    );
 
-    add_shortcut(&shortcut_controller, "<Control>3", gtk4::glib::clone!(
-        #[weak]
-        settings_btn,
-        #[upgrade_or]
-        gtk4::glib::Propagation::Proceed,
-        move || {
-            settings_btn.set_active(true);
-            gtk4::glib::Propagation::Stop
-        }
-    ));
+    add_shortcut(
+        &shortcut_controller,
+        "<Control>3",
+        gtk4::glib::clone!(
+            #[weak]
+            settings_btn,
+            #[upgrade_or]
+            gtk4::glib::Propagation::Proceed,
+            move || {
+                settings_btn.set_active(true);
+                gtk4::glib::Propagation::Stop
+            }
+        ),
+    );
 
-    add_shortcut(&shortcut_controller, "space", gtk4::glib::clone!(
-        #[strong]
-        timer,
-        move || {
-            timer.borrow_mut().toggle();
-            gtk4::glib::Propagation::Stop
-        }
-    ));
+    add_shortcut(
+        &shortcut_controller,
+        "space",
+        gtk4::glib::clone!(
+            #[strong]
+            timer,
+            move || {
+                timer.borrow_mut().toggle();
+                gtk4::glib::Propagation::Stop
+            }
+        ),
+    );
 
-    add_shortcut(&shortcut_controller, "<Control>r", gtk4::glib::clone!(
-        #[strong]
-        timer,
-        #[strong]
-        config,
-        move || {
-            let cfg = config.borrow();
-            timer.borrow_mut().reset(&cfg.timer);
-            gtk4::glib::Propagation::Stop
-        }
-    ));
+    add_shortcut(
+        &shortcut_controller,
+        "<Control>r",
+        gtk4::glib::clone!(
+            #[strong]
+            timer,
+            #[strong]
+            config,
+            move || {
+                let cfg = config.borrow();
+                timer.borrow_mut().reset(&cfg.timer);
+                gtk4::glib::Propagation::Stop
+            }
+        ),
+    );
 
-    add_shortcut(&shortcut_controller, "<Control>s", gtk4::glib::clone!(
-        #[strong]
-        timer,
-        #[strong]
-        config,
-        move || {
-            let cfg = config.borrow();
-            timer.borrow_mut().skip(&cfg.timer);
-            gtk4::glib::Propagation::Stop
-        }
-    ));
+    add_shortcut(
+        &shortcut_controller,
+        "<Control>s",
+        gtk4::glib::clone!(
+            #[strong]
+            timer,
+            #[strong]
+            config,
+            move || {
+                let cfg = config.borrow();
+                timer.borrow_mut().skip(&cfg.timer);
+                gtk4::glib::Propagation::Stop
+            }
+        ),
+    );
 
     window.add_controller(shortcut_controller);
     window.present();
