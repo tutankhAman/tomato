@@ -151,7 +151,9 @@ impl Config {
                 }
             },
             Err(e) => {
-                eprintln!("tomato: failed to read config {}: {e}", path.display());
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("tomato: failed to read config {}: {e}", path.display());
+                }
                 Config::default()
             }
         }

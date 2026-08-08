@@ -34,6 +34,8 @@ pub struct Todo {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TodoStore {
     pub version: u32,
+    #[serde(default)]
+    pub active_id: Option<String>,
     pub items: Vec<Todo>,
 }
 
@@ -41,6 +43,7 @@ impl Default for TodoStore {
     fn default() -> Self {
         Self {
             version: 1,
+            active_id: None,
             items: Vec::new(),
         }
     }
@@ -81,12 +84,20 @@ impl TodoStore {
     }
 
     pub fn remove(&mut self, id: &str) -> bool {
+        if self.active_id.as_deref() == Some(id) {
+            self.active_id = None;
+        }
         let len = self.items.len();
         self.items.retain(|t| t.id != id);
         self.items.len() != len
     }
 
     pub fn clear_completed(&mut self) {
+        if let Some(ref active) = self.active_id {
+            if self.items.iter().any(|t| t.id == *active && t.done) {
+                self.active_id = None;
+            }
+        }
         self.items.retain(|t| !t.done);
     }
 
@@ -97,6 +108,23 @@ impl TodoStore {
         } else {
             false
         }
+    }
+
+    pub fn active_task(&self) -> Option<&Todo> {
+        let active_id = self.active_id.as_deref()?;
+        self.items.iter().find(|t| t.id == active_id)
+    }
+
+    pub fn set_active(&mut self, id: Option<String>) {
+        self.active_id = id;
+    }
+
+    pub fn increment_active_pomodoro(&mut self) -> bool {
+        let active_id = match &self.active_id {
+            Some(id) => id.clone(),
+            None => return false,
+        };
+        self.increment_pomodoro(&active_id)
     }
 
     pub fn remaining_count(&self) -> usize {
@@ -194,5 +222,19 @@ mod tests {
         assert!(store.items.is_empty());
         assert!(path.with_extension("json.bak").exists());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn active_task_management() {
+        let mut store = TodoStore::default();
+        let id = store.add("Active task".to_string());
+        store.set_active(Some(id.clone()));
+        assert_eq!(store.active_task().unwrap().title, "Active task");
+
+        assert!(store.increment_active_pomodoro());
+        assert_eq!(store.active_task().unwrap().pomodoros_done, 1);
+
+        assert!(store.remove(&id));
+        assert!(store.active_task().is_none());
     }
 }
