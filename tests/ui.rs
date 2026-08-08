@@ -41,7 +41,8 @@ fn ui_pages_build_expected_widgets() {
     {
         let config = Rc::new(RefCell::new(Config::default()));
         let timer = Rc::new(RefCell::new(Timer::new(&config.borrow().timer)));
-        let widget = timer_page::build(Rc::clone(&config), Rc::clone(&timer));
+        let store = Rc::new(RefCell::new(TodoStore::default()));
+        let widget = timer_page::build(Rc::clone(&config), Rc::clone(&timer), Rc::clone(&store));
 
         let page = widget.downcast::<gtk4::Box>().expect("timer page is a Box");
         assert!(page.has_css_class("tomato-page"), "timer page has tomato-page class");
@@ -77,5 +78,15 @@ fn ui_pages_build_expected_widgets() {
         assert!(!buttons.is_empty(), "add (+) button present");
         assert_eq!(rows.len(), 2, "two seeded tasks rendered as rows");
         assert!(found_footer, "footer shows active/done counts");
+    }
+
+    // 3. Settings Page
+    {
+        let config = Rc::new(RefCell::new(Config::default()));
+        let widget = tomato::ui::settings_page::build(Rc::clone(&config), || {});
+        let scroller = widget.downcast::<gtk4::ScrolledWindow>().expect("settings page is ScrolledWindow");
+        let labels: Vec<gtk4::Label> = find_widgets(&scroller);
+        let found_header = labels.iter().any(|lbl| lbl.label().contains("TIMER SETTINGS"));
+        assert!(found_header, "Settings page headers present");
     }
 }

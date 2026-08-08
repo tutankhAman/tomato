@@ -93,10 +93,10 @@ impl TodoStore {
     }
 
     pub fn clear_completed(&mut self) {
-        if let Some(ref active) = self.active_id {
-            if self.items.iter().any(|t| t.id == *active && t.done) {
-                self.active_id = None;
-            }
+        if let Some(ref active) = self.active_id
+            && self.items.iter().any(|t| t.id == *active && t.done)
+        {
+            self.active_id = None;
         }
         self.items.retain(|t| !t.done);
     }

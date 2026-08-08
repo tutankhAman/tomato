@@ -223,47 +223,7 @@ window.tomato-root {
 
 /* ---------- todo list ---------- */
 
-.todo-list {
-  background: transparent;
-}
-
-.todo-row {
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.055);
-  border-radius: 12px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-  transition: background 140ms ease, border 140ms ease;
-}
-
-.todo-row:hover {
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.todo-row.active-todo {
-  border: 1px solid rgba(255, 107, 107, 0.55);
-  background: rgba(255, 107, 107, 0.09);
-}
-
-.todo-title {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.todo-title.done {
-  color: rgba(255, 255, 255, 0.33);
-}
-
-.todo-badge {
-  font-size: 10px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.07);
-  border-radius: 6px;
-  padding: 2px 7px;
-}
-
-.todo-entry {
+.tomato-entry {
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -272,18 +232,91 @@ window.tomato-root {
   font-size: 13px;
 }
 
-.todo-entry:focus {
+.tomato-entry:focus {
   border: 1px solid rgba(255, 107, 107, 0.6);
 }
 
-.empty-hint {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.3);
+.tomato-entry > text {
+  padding: 2px 4px;
 }
 
-.footer-label {
+.tomato-addbtn {
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ff6b6b 0%, #ee5a52 100%);
+  border: none;
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(238, 90, 82, 0.30);
+  transition: box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.tomato-addbtn:hover {
+  box-shadow: 0 8px 24px rgba(238, 90, 82, 0.44);
+}
+
+.tomato-addbtn:active {
+  opacity: 0.86;
+}
+
+.tomato-list {
+  background: transparent;
+  margin-top: 8px;
+}
+
+.tomato-task-row {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 9px 12px;
+  margin-bottom: 6px;
+  transition: background 140ms ease, border 140ms ease;
+}
+
+.tomato-task-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tomato-task-title {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.tomato-task-title.done {
+  color: rgba(255, 255, 255, 0.32);
+  text-decoration: line-through;
+}
+
+.tomato-footer {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 4px;
+}
+
+.tomato-active-task {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ff9d9d;
+  background: rgba(255, 107, 107, 0.12);
+  border-radius: 8px;
+  padding: 4px 10px;
+  margin-top: 2px;
+}
+
+.tomato-pomo-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #ff9d9d;
+  background: rgba(255, 107, 107, 0.15);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.tomato-task-row.active-target {
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.35);
 }
 
 /* ---------- settings ---------- */
