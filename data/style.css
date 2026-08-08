@@ -1,0 +1,231 @@
+/* Tomato — GTK4 CSS. NOTE: not web CSS. No flexbox/gap/transform/vars. */
+
+window.tomato-root {
+  background: transparent;
+}
+
+.tomato-card {
+  background: linear-gradient(160deg, #1c1c22 0%, #16161b 100%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+
+/* ---------- header ---------- */
+
+.tomato-header {
+  padding: 10px 14px 4px 14px;
+}
+
+.tomato-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.tomato-iconbtn {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.45);
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.tomato-iconbtn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+}
+
+.tomato-iconbtn:active {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.tomato-iconbtn.destructive:hover {
+  background: rgba(255, 90, 90, 0.18);
+  color: #ff7b7b;
+}
+
+/* ---------- phase pill ---------- */
+
+.phase-pill {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  padding: 4px 14px;
+  border-radius: 999px;
+}
+
+.phase-pill.focus {
+  background: rgba(255, 107, 107, 0.16);
+  color: #ff8585;
+}
+
+.phase-pill.short-break {
+  background: rgba(78, 205, 196, 0.16);
+  color: #5fd8d0;
+}
+
+.phase-pill.long-break {
+  background: rgba(91, 141, 239, 0.16);
+  color: #7ba4f5;
+}
+
+/* ---------- controls ---------- */
+
+.tomato-primary {
+  min-width: 116px;
+  min-height: 40px;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: #ffffff;
+  background: linear-gradient(180deg, #ff6b6b 0%, #ee5a52 100%);
+  border: none;
+  box-shadow: 0 6px 18px rgba(238, 90, 82, 0.34);
+  transition: box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.tomato-primary:hover {
+  box-shadow: 0 8px 24px rgba(238, 90, 82, 0.46);
+}
+
+.tomato-primary:active {
+  opacity: 0.86;
+}
+
+.tomato-primary.running {
+  background: linear-gradient(180deg, #3a3a44 0%, #2e2e37 100%);
+  box-shadow: none;
+}
+
+.tomato-ghost {
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.62);
+  box-shadow: none;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.tomato-ghost:hover {
+  background: rgba(255, 255, 255, 0.11);
+  color: #ffffff;
+}
+
+/* ---------- todo list ---------- */
+
+.todo-list {
+  background: transparent;
+}
+
+.todo-row {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 12px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  transition: background 140ms ease, border 140ms ease;
+}
+
+.todo-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.todo-row.active-todo {
+  border: 1px solid rgba(255, 107, 107, 0.55);
+  background: rgba(255, 107, 107, 0.09);
+}
+
+.todo-title {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.todo-title.done {
+  color: rgba(255, 255, 255, 0.33);
+}
+
+.todo-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+
+.todo-entry {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.todo-entry:focus {
+  border: 1px solid rgba(255, 107, 107, 0.6);
+}
+
+.empty-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.footer-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* ---------- settings ---------- */
+
+.settings-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: 6px;
+}
+
+.settings-row {
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 10px;
+  padding: 6px 10px;
+  margin-bottom: 5px;
+}
+
+.settings-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* ---------- view switcher ---------- */
+
+.tomato-switcher button {
+  min-height: 28px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  color: rgba(255, 255, 255, 0.42);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.tomato-switcher button:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.tomato-switcher button:checked {
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+}

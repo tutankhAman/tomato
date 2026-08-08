@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Tomato
+GenericName=Pomodoro Timer
+Comment=Sticky always-on-top Pomodoro timer and todo tracker
+Exec=tomato
+Icon=alarm-symbolic
+Terminal=false
+Categories=Utility;Office;ProjectManagement;
+Keywords=pomodoro;timer;todo;focus;productivity;
+StartupWMClass=tomato
+StartupNotify=false
