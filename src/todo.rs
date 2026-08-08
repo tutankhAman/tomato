@@ -108,10 +108,7 @@ impl TodoStore {
             Ok(c) => c,
             Err(e) if e.kind() == ErrorKind::NotFound => return Self::default(),
             Err(e) => {
-                eprintln!(
-                    "tomato: failed to read todo store {}: {e}",
-                    path.display()
-                );
+                eprintln!("tomato: failed to read todo store {}: {e}", path.display());
                 return Self::default();
             }
         };

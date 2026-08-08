@@ -24,6 +24,39 @@ Rust GTK4 + libadwaita sticky Pomodoro + todo panel for Linux/Wayland.
 - Use `Layer::Overlay`, `set_exclusive_zone(0)`, `KeyboardMode::OnDemand`, `set_namespace(Some("tomato"))`.
 - The window cannot be moved by the compositor. Implement dragging by mutating layer-shell margins live and persisting them to config on drag end.
 
+## CRITICAL: `glib::clone!` syntax (glib 0.22)
+
+The old `@strong` / `@weak` syntax was **removed**. Using it produces `error: expected an expression`.
+
+Modern syntax uses attributes and a `move ||` closure:
+
+```rust
+// WRONG — will not compile
+glib::clone!(@weak window, @strong config => move |_| { ... })
+
+// CORRECT
+glib::clone!(
+    #[weak] window,
+    #[strong] config,
+    move |_| { ... }
+)
+
+// With a default return value for weak-ref failure:
+glib::clone!(
+    #[weak] stack,
+    #[upgrade_or] glib::Propagation::Proceed,
+    move |_, _| { ... }
+)
+
+// Renaming / this-capture:
+glib::clone!(
+    #[weak(rename_to = win)] window,
+    move |_| { win.close(); }
+)
+```
+
+Rule: every captured variable gets its own `#[weak]` or `#[strong]` attribute line, and the closure comes last as a normal argument. If a `#[weak]` capture is used in a closure that must return a value, add `#[upgrade_or]`, `#[upgrade_or_else]`, or `#[upgrade_or_default]`.
+
 ## Paths
 
 - Config: `~/.config/tomato/config.toml`
