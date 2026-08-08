@@ -75,6 +75,108 @@ window.tomato-root {
   color: #7ba4f5;
 }
 
+/* ---------- timer page ---------- */
+
+.tomato-page {
+  padding: 8px 20px 16px 20px;
+}
+
+.tomato-phase-pill {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  padding: 4px 14px;
+  border-radius: 999px;
+}
+
+.tomato-phase-pill.phase-focus {
+  background: rgba(255, 107, 107, 0.22);
+  color: #ff9d9d;
+}
+
+.tomato-phase-pill.phase-short {
+  background: rgba(78, 205, 196, 0.22);
+  color: #6fe3db;
+}
+
+.tomato-phase-pill.phase-long {
+  background: rgba(91, 141, 239, 0.22);
+  color: #8fb2f7;
+}
+
+.tomato-time {
+  font-size: 54px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #ffffff;
+}
+
+.tomato-progress {
+  min-height: 6px;
+}
+
+.tomato-progress trough {
+  min-height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+}
+
+.tomato-progress progress {
+  min-height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #ff6b6b 0%, #ff9d5c 100%);
+  border: none;
+}
+
+.tomato-sessions {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.tomato-controls {
+  margin-top: 14px;
+}
+
+.tomato-controls button {
+  margin: 0 3px;
+}
+
+.tomato-btn {
+  min-height: 40px;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.62);
+  box-shadow: none;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.tomato-btn:hover {
+  background: rgba(255, 255, 255, 0.11);
+  color: #ffffff;
+}
+
+.tomato-btn.primary {
+  color: #ffffff;
+  background: linear-gradient(180deg, #ff6b6b 0%, #ee5a52 100%);
+  border: none;
+  box-shadow: 0 6px 18px rgba(238, 90, 82, 0.34);
+  transition: box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.tomato-btn.primary:hover {
+  box-shadow: 0 8px 24px rgba(238, 90, 82, 0.46);
+}
+
+.tomato-btn.primary:active {
+  opacity: 0.86;
+}
+
 /* ---------- controls ---------- */
 
 .tomato-primary {
@@ -208,13 +310,21 @@ window.tomato-root {
 
 /* ---------- view switcher ---------- */
 
+.tomato-switcher {
+  padding: 4px;
+  margin: 2px 12px 10px 12px;
+  background: rgba(255, 255, 255, 0.045);
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
 .tomato-switcher button {
   min-height: 28px;
   border-radius: 8px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.7px;
-  color: rgba(255, 255, 255, 0.42);
+  color: rgba(255, 255, 255, 0.55);
   background: transparent;
   border: none;
   box-shadow: none;
@@ -222,10 +332,12 @@ window.tomato-root {
 }
 
 .tomato-switcher button:hover {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .tomato-switcher button:checked {
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.14);
   color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }

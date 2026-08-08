@@ -6,6 +6,8 @@ use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use libadwaita::prelude::*;
 
 use crate::config::Config;
+use crate::timer::Timer;
+use crate::ui::timer_page;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 enum Corner {
@@ -202,8 +204,9 @@ pub fn build(app: &libadwaita::Application) {
     ));
     header.add_controller(drag);
 
-    let switcher = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    let switcher = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     switcher.add_css_class("tomato-switcher");
+    switcher.set_homogeneous(true);
 
     let timer_btn = gtk4::ToggleButton::with_label("TIMER");
     let tasks_btn = gtk4::ToggleButton::with_label("TASKS");
@@ -224,10 +227,9 @@ pub fn build(app: &libadwaita::Application) {
     let stack = gtk4::Stack::new();
     stack.set_vexpand(true);
 
-    let timer_label = gtk4::Label::new(Some("Timer"));
-    timer_label.set_halign(gtk4::Align::Center);
-    timer_label.set_valign(gtk4::Align::Center);
-    stack.add_named(&timer_label, Some("timer"));
+    let timer = Rc::new(RefCell::new(Timer::new(&config.borrow().timer)));
+    let timer_page = timer_page::build(Rc::clone(&config), Rc::clone(&timer));
+    stack.add_named(&timer_page, Some("timer"));
 
     let tasks_label = gtk4::Label::new(Some("Tasks"));
     tasks_label.set_halign(gtk4::Align::Center);
