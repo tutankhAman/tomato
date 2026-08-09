@@ -42,18 +42,20 @@ fn ui_pages_build_expected_widgets() {
         let config = Rc::new(RefCell::new(Config::default()));
         let timer = Rc::new(RefCell::new(Timer::new(&config.borrow().timer)));
         let store = Rc::new(RefCell::new(TodoStore::default()));
-        let widget = timer_page::build(Rc::clone(&config), Rc::clone(&timer), Rc::clone(&store));
+        let dummy_ring = gtk4::DrawingArea::new();
+        let dummy_label = gtk4::Label::new(None);
+        let widget = timer_page::build(Rc::clone(&config), Rc::clone(&timer), Rc::clone(&store), &dummy_ring, &dummy_label);
 
         let page = widget.downcast::<gtk4::Box>().expect("timer page is a Box");
-        assert!(page.has_css_class("tomato-page"), "timer page has tomato-page class");
+        assert!(page.has_css_class("tm-page"), "timer page has tm-page class");
 
         let labels: Vec<gtk4::Label> = find_widgets(&page);
         let found_time = labels.iter().any(|lbl| lbl.label() == "25:00");
-        let found_progress = !find_widgets::<gtk4::ProgressBar>(&page).is_empty();
+        let found_ring = !find_widgets::<gtk4::DrawingArea>(&page).is_empty();
         let buttons: Vec<gtk4::Button> = find_widgets(&page);
 
         assert!(found_time, "countdown shows default 25:00");
-        assert!(found_progress, "progress bar present");
+        assert!(found_ring, "progress ring present");
         assert!(buttons.len() >= 3, "start, reset, skip buttons present");
     }
 
@@ -66,7 +68,7 @@ fn ui_pages_build_expected_widgets() {
         let widget = tasks_page::build(Rc::clone(&store));
 
         let page = widget.downcast::<gtk4::Box>().expect("tasks page is a Box");
-        assert!(page.has_css_class("tomato-page"), "tasks page has tomato-page class");
+        assert!(page.has_css_class("tm-page"), "tasks page has tm-page class");
 
         let entries: Vec<gtk4::Entry> = find_widgets(&page);
         let buttons: Vec<gtk4::Button> = find_widgets(&page);
@@ -86,7 +88,7 @@ fn ui_pages_build_expected_widgets() {
         let widget = tomato::ui::settings_page::build(Rc::clone(&config), || {});
         let scroller = widget.downcast::<gtk4::ScrolledWindow>().expect("settings page is ScrolledWindow");
         let labels: Vec<gtk4::Label> = find_widgets(&scroller);
-        let found_header = labels.iter().any(|lbl| lbl.label().contains("TIMER SETTINGS"));
+        let found_header = labels.iter().any(|lbl| lbl.label().contains("TIMER"));
         assert!(found_header, "Settings page headers present");
     }
 }
