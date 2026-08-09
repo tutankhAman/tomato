@@ -85,7 +85,12 @@ pub fn build(app: &libadwaita::Application) {
     window.add_css_class("tm-root");
 
     let cfg_borrow = config.borrow();
-    window.set_opacity(cfg_borrow.window.opacity);
+    let initial_opacity = cfg_borrow.window.opacity;
+    // Use content alpha instead of whole-window opacity — the compositor blur
+    // (better-blur/breeze) blits a rectangular slab behind the window; with
+    // whole-window opacity the transparent corners still show as a sharp
+    // blurred rectangle. Content alpha keeps corners fully transparent.
+    crate::ui::reload_theme_with_opacity(initial_opacity);
 
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
     window.set_child(Some(&root));
@@ -382,7 +387,7 @@ pub fn build(app: &libadwaita::Application) {
         drag_state,
         move || {
             let cfg = config.borrow();
-            window.set_opacity(cfg.window.opacity);
+            crate::ui::reload_theme_with_opacity(cfg.window.opacity);
             if on_layer_shell {
                 let corner = parse_corner(&cfg.window.anchor);
                 drag_state.borrow_mut().corner = corner;
