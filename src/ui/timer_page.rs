@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::f64::consts::PI;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -8,59 +9,251 @@ use crate::config::Config;
 use crate::timer::{Phase, Status, Timer};
 use crate::todo::TodoStore;
 
+/// Diameter of the progress ring.
+const RING: i32 = 204;
+/// Ring stroke width.
+const RING_W: f64 = 9.0;
+
 pub fn build(
     config: Rc<RefCell<Config>>,
     timer: Rc<RefCell<Timer>>,
     store: Rc<RefCell<TodoStore>>,
+    pill_ring: &gtk4::DrawingArea,
+    pill_time: &gtk4::Label,
 ) -> gtk4::Widget {
-    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
-    page.add_css_class("tomato-page");
-    page.set_valign(gtk4::Align::Center);
+    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    page.add_css_class("tm-page");
 
-    let pill = gtk4::Label::new(Some("FOCUS"));
-    pill.add_css_class("tomato-phase-pill");
-    pill.add_css_class("phase-focus");
+    // ── Phase label ─────────────────────────────────────────────────────────
+    let phase_lbl = gtk4::Label::new(Some("FOCUS"));
+    phase_lbl.add_css_class("tm-phase");
+    phase_lbl.add_css_class("tm-phase-focus");
+    phase_lbl.set_halign(gtk4::Align::Center);
+    phase_lbl.set_margin_top(6);
+    page.append(&phase_lbl);
+
+    // ── Ring ────────────────────────────────────────────────────────────────
+    let overlay = gtk4::Overlay::new();
+    overlay.set_halign(gtk4::Align::Center);
+    overlay.set_valign(gtk4::Align::Center);
+    overlay.set_size_request(RING, RING);
+    overlay.set_margin_top(8);
+
+    let ring = gtk4::DrawingArea::new();
+    ring.set_size_request(RING, RING);
+    ring.set_content_width(RING);
+    ring.set_content_height(RING);
 
     let time = gtk4::Label::new(Some("25:00"));
-    time.add_css_class("tomato-time");
+    time.add_css_class("tm-time");
 
-    let progress = gtk4::ProgressBar::new();
-    progress.add_css_class("tomato-progress");
-    progress.set_show_text(false);
-    progress.set_hexpand(true);
+    let sub = gtk4::Label::new(Some("REMAINING"));
+    sub.add_css_class("tm-time-sub");
 
-    let sessions = gtk4::Label::new(Some("SESSION 1 / 4"));
-    sessions.add_css_class("tomato-sessions");
+    let center = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    center.set_valign(gtk4::Align::Center);
+    center.set_halign(gtk4::Align::Center);
+    center.append(&time);
+    center.append(&sub);
 
-    let active_task_label = gtk4::Label::new(None);
-    active_task_label.add_css_class("tomato-active-task");
-    active_task_label.set_ellipsize(pango::EllipsizeMode::End);
+    overlay.set_child(Some(&ring));
+    overlay.add_overlay(&center);
+    page.append(&overlay);
 
-    let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    controls.add_css_class("tomato-controls");
-    controls.set_homogeneous(true);
+    // ── Session dots ────────────────────────────────────────────────────────
+    let dots = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+    dots.add_css_class("tm-dots");
+    dots.set_halign(gtk4::Align::Center);
+    dots.set_margin_top(12);
+    page.append(&dots);
 
-    let start_btn = gtk4::Button::with_label("START");
-    start_btn.add_css_class("tomato-btn");
-    start_btn.add_css_class("primary");
+    // ── Active task chip ────────────────────────────────────────────────────
+    let chip = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    chip.add_css_class("tm-chip");
+    chip.set_halign(gtk4::Align::Center);
+    chip.set_margin_top(10);
 
-    let reset_btn = gtk4::Button::with_label("RESET");
-    reset_btn.add_css_class("tomato-btn");
+    let chip_dot = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    chip_dot.add_css_class("tm-chip-dot");
+    chip_dot.set_valign(gtk4::Align::Center);
+    chip.append(&chip_dot);
 
-    let skip_btn = gtk4::Button::with_label("SKIP");
-    skip_btn.add_css_class("tomato-btn");
+    let chip_text = gtk4::Label::new(None);
+    chip_text.add_css_class("tm-chip-text");
+    chip_text.set_ellipsize(pango::EllipsizeMode::End);
+    chip_text.set_max_width_chars(26);
+    chip.append(&chip_text);
+    page.append(&chip);
 
-    controls.append(&start_btn);
+    // ── Controls ────────────────────────────────────────────────────────────
+    let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
+    controls.add_css_class("tm-ctl");
+    controls.set_halign(gtk4::Align::Center);
+    controls.set_margin_top(16);
+
+    let reset_btn = gtk4::Button::from_icon_name("view-refresh-symbolic");
+    reset_btn.add_css_class("tm-btn-ghost");
+    reset_btn.set_tooltip_text(Some("Reset (Ctrl+R)"));
+
+    let start_btn = gtk4::Button::with_label("Start Focus");
+    start_btn.add_css_class("tm-btn-main");
+
+    let skip_btn = gtk4::Button::from_icon_name("media-skip-forward-symbolic");
+    skip_btn.add_css_class("tm-btn-ghost");
+    skip_btn.set_tooltip_text(Some("Skip phase (Ctrl+S)"));
+
     controls.append(&reset_btn);
+    controls.append(&start_btn);
     controls.append(&skip_btn);
-
-    page.append(&pill);
-    page.append(&time);
-    page.append(&progress);
-    page.append(&sessions);
-    page.append(&active_task_label);
     page.append(&controls);
 
+    // ── Smooth ring animation state ─────────────────────────────────────────
+    // Displayed progress eases toward the timer's real progress every frame.
+    let shown = Rc::new(RefCell::new(0.0f64));
+    // Real progress at last refresh; a big jump (reset/skip/phase change) snaps.
+    let target = Rc::new(RefCell::new(0.0f64));
+
+    ring.set_draw_func(gtk4::glib::clone!(
+        #[strong]
+        shown,
+        move |area, cr, width, height| {
+            let p = *shown.borrow();
+            let w = width as f64;
+            let h = height as f64;
+            let cx = w / 2.0;
+            let cy = h / 2.0;
+            let radius = (w.min(h) - RING_W) / 2.0;
+
+            // Track: derive from the widget's themed foreground color.
+            #[allow(deprecated)]
+            let fg = area.style_context().color();
+            let (fr, fg_, fb) = (f64::from(fg.red()), f64::from(fg.green()), f64::from(fg.blue()));
+
+            cr.set_source_rgba(fr, fg_, fb, 0.10);
+            cr.set_line_width(RING_W - 2.0);
+            cr.arc(cx, cy, radius, 0.0, 2.0 * PI);
+            let _ = cr.stroke();
+
+            if p <= 0.0005 {
+                return;
+            }
+
+            // Phase accent comes from the widget's `color`, set by the
+            // tm-ring-* CSS phase classes.
+            #[allow(deprecated)]
+            let accent = area.style_context().color();
+            let (ar, ag, ab) = (
+                f64::from(accent.red()),
+                f64::from(accent.green()),
+                f64::from(accent.blue()),
+            );
+
+            let start = -PI / 2.0;
+            let end = start + p * 2.0 * PI;
+
+            // Soft halo under the arc
+            cr.set_source_rgba(ar, ag, ab, 0.16);
+            cr.set_line_width(RING_W + 6.0);
+            cr.set_line_cap(cairo::LineCap::Round);
+            cr.arc(cx, cy, radius, start, end);
+            let _ = cr.stroke();
+
+            // Main arc
+            cr.set_source_rgba(ar, ag, ab, 1.0);
+            cr.set_line_width(RING_W);
+            cr.arc(cx, cy, radius, start, end);
+            let _ = cr.stroke();
+
+            // Leading knob
+            let kx = cx + radius * end.cos();
+            let ky = cy + radius * end.sin();
+            cr.set_source_rgba(ar, ag, ab, 1.0);
+            cr.arc(kx, ky, RING_W / 2.0 + 1.5, 0.0, 2.0 * PI);
+            let _ = cr.fill();
+
+            let _ = (fr, fg_, fb);
+        }
+    ));
+
+    // ── Pill Ring ───────────────────────────────────────────────────────────
+    pill_ring.set_draw_func(gtk4::glib::clone!(
+        #[strong]
+        shown,
+        move |area, cr, width, height| {
+            let p = *shown.borrow();
+            let w = width as f64;
+            let h = height as f64;
+            let cx = w / 2.0;
+            let cy = h / 2.0;
+            let ring_w = 4.0; // smaller stroke for pill
+            let radius = (w.min(h) - ring_w) / 2.0;
+
+            #[allow(deprecated)]
+            let fg = area.style_context().color();
+            let (fr, fg_, fb) = (f64::from(fg.red()), f64::from(fg.green()), f64::from(fg.blue()));
+
+            cr.set_source_rgba(fr, fg_, fb, 0.10);
+            cr.set_line_width(ring_w - 1.0);
+            cr.arc(cx, cy, radius, 0.0, 2.0 * PI);
+            let _ = cr.stroke();
+
+            if p <= 0.0005 {
+                return;
+            }
+
+            #[allow(deprecated)]
+            let accent = area.style_context().color();
+            let (ar, ag, ab) = (
+                f64::from(accent.red()),
+                f64::from(accent.green()),
+                f64::from(accent.blue()),
+            );
+
+            let start = -PI / 2.0;
+            let end = start + p * 2.0 * PI;
+
+            cr.set_source_rgba(ar, ag, ab, 1.0);
+            cr.set_line_width(ring_w);
+            cr.arc(cx, cy, radius, start, end);
+            let _ = cr.stroke();
+        }
+    ));
+
+    // Frame callback eases `shown` toward `target`. Attach to pill_ring since it's always visible.
+    pill_ring.add_tick_callback(gtk4::glib::clone!(
+        #[strong]
+        shown,
+        #[strong]
+        target,
+        #[weak]
+        ring,
+        #[weak(rename_to = pill)]
+        pill_ring,
+        #[upgrade_or]
+        gtk4::glib::ControlFlow::Break,
+        move |_, _clock| {
+            let t = *target.borrow();
+            let mut s = shown.borrow_mut();
+            let diff = t - *s;
+            if diff.abs() < 0.000001 {
+                if (*s - t).abs() > f64::EPSILON {
+                    *s = t;
+                    ring.queue_draw();
+                    pill.queue_draw();
+                }
+                return gtk4::glib::ControlFlow::Continue;
+            }
+            let frame = 1.0f64 / 60.0;
+            let k = 1.0 - (-5.0f64 * frame).exp();
+            *s += diff * k;
+            drop(s);
+            ring.queue_draw();
+            pill.queue_draw();
+            gtk4::glib::ControlFlow::Continue
+        }
+    ));
+
+    // ── Refresh ─────────────────────────────────────────────────────────────
     let refresh = gtk4::glib::clone!(
         #[strong]
         config,
@@ -69,55 +262,112 @@ pub fn build(
         #[strong]
         store,
         #[weak]
-        pill,
+        phase_lbl,
         #[weak]
         time,
         #[weak]
-        progress,
+        sub,
         #[weak]
-        sessions,
+        ring,
         #[weak]
-        active_task_label,
+        dots,
+        #[weak]
+        chip,
+        #[weak]
+        chip_text,
         #[weak]
         start_btn,
+        #[weak(rename_to = pill_ring_w)]
+        pill_ring,
+        #[weak(rename_to = pill_time_w)]
+        pill_time,
+        #[strong]
+        target,
+        #[strong]
+        shown,
         move || {
             let cfg = config.borrow();
             let t = timer.borrow();
 
             let (phase_text, phase_class) = match t.phase() {
-                Phase::Focus => ("FOCUS", "phase-focus"),
-                Phase::ShortBreak => ("SHORT BREAK", "phase-short"),
-                Phase::LongBreak => ("LONG BREAK", "phase-long"),
+                Phase::Focus => ("FOCUS", "tm-phase-focus"),
+                Phase::ShortBreak => ("SHORT BREAK", "tm-phase-short"),
+                Phase::LongBreak => ("LONG BREAK", "tm-phase-long"),
             };
-            pill.set_label(phase_text);
-            pill.remove_css_class("phase-focus");
-            pill.remove_css_class("phase-short");
-            pill.remove_css_class("phase-long");
-            pill.add_css_class(phase_class);
+            phase_lbl.set_label(phase_text);
+            for c in ["tm-phase-focus", "tm-phase-short", "tm-phase-long"] {
+                phase_lbl.remove_css_class(c);
+                ring.remove_css_class(c);
+                pill_ring_w.remove_css_class(c);
+            }
+            phase_lbl.add_css_class(phase_class);
+            
+            let ring_class = match t.phase() {
+                Phase::Focus => "tm-ring-focus",
+                Phase::ShortBreak => "tm-ring-short",
+                Phase::LongBreak => "tm-ring-long",
+            };
+            ring.add_css_class(ring_class);
+            pill_ring_w.add_css_class(ring_class);
 
-            time.set_label(&t.remaining_mmss());
-            progress.set_fraction(t.progress(&cfg.timer));
+            let mmss = t.remaining_mmss();
+            time.set_label(&mmss);
+            pill_time_w.set_label(&mmss);
+            
+            sub.set_label(match t.status() {
+                Status::Running => "REMAINING",
+                Status::Paused => "PAUSED",
+                Status::Idle => "READY",
+            });
 
-            sessions.set_label(&format!(
-                "SESSION {} / {}",
-                t.completed_focus_sessions() + 1,
-                cfg.timer.cycles_before_long_break.max(1)
-            ));
+            let real = t.progress(&cfg.timer);
+            let mut tg = target.borrow_mut();
+            // Snap on large jumps (reset / skip / phase change) — else ease.
+            if (*tg - real).abs() > 0.03 || real < *tg - 0.001 && real < 0.02 {
+                *shown.borrow_mut() = real;
+                ring.queue_draw();
+                pill_ring_w.queue_draw();
+            }
+            *tg = real;
+            drop(tg);
 
-            let s = store.borrow();
-            if let Some(active) = s.active_task() {
-                active_task_label.set_label(&format!("🎯 {}", active.title));
-                active_task_label.set_visible(true);
-            } else {
-                active_task_label.set_visible(false);
+            // Session dots
+            while let Some(child) = dots.first_child() {
+                dots.remove(&child);
+            }
+            let cycles = cfg.timer.cycles_before_long_break.max(1) as usize;
+            let done = (t.completed_focus_sessions() % cfg.timer.cycles_before_long_break.max(1))
+                as usize;
+            for i in 0..cycles.min(8) {
+                let d = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+                d.add_css_class("tm-dot");
+                if i < done {
+                    d.add_css_class("tm-dot-on");
+                    d.add_css_class(phase_class);
+                }
+                dots.append(&d);
             }
 
-            if t.status() == Status::Running {
-                start_btn.set_label("PAUSE");
-                start_btn.add_css_class("running");
+            // Active task chip
+            let s = store.borrow();
+            if let Some(active) = s.active_task() {
+                chip_text.set_label(&active.title);
+                chip.set_visible(true);
             } else {
-                start_btn.set_label("START");
-                start_btn.remove_css_class("running");
+                chip.set_visible(false);
+            }
+            drop(s);
+
+            // Start / pause button
+            if t.status() == Status::Running {
+                start_btn.set_label("Pause");
+                start_btn.add_css_class("tm-btn-running");
+            } else {
+                start_btn.set_label(match t.phase() {
+                    Phase::Focus => "Start Focus",
+                    Phase::ShortBreak | Phase::LongBreak => "Start Break",
+                });
+                start_btn.remove_css_class("tm-btn-running");
             }
         }
     );
@@ -166,7 +416,7 @@ pub fn build(
     ));
 
     gtk4::glib::timeout_add_local(
-        Duration::from_secs(1),
+        Duration::from_millis(250),
         gtk4::glib::clone!(
             #[strong]
             config,
@@ -180,28 +430,31 @@ pub fn build(
                 let status = timer.borrow().status();
                 if status == Status::Running {
                     let cfg = config.borrow();
-                    let new_phase = timer.borrow_mut().tick(Duration::from_secs(1), &cfg.timer);
+                    let new_phase = timer
+                        .borrow_mut()
+                        .tick(Duration::from_millis(250), &cfg.timer);
                     if let Some(phase) = new_phase {
                         if (phase == Phase::ShortBreak || phase == Phase::LongBreak)
                             && store.borrow_mut().increment_active_pomodoro()
                         {
                             let _ = store.borrow().save();
                         }
-
                         if cfg.notifications.enabled {
                             let (summary, body) = match phase {
-                                Phase::Focus => ("Break Over", "Back to work! Stay focused."),
-                                Phase::ShortBreak => ("Focus Complete", "Nice work! Take a short break."),
-                                Phase::LongBreak => ("Session Finished", "Great job! Enjoy a long break."),
+                                Phase::Focus => ("Break over", "Back to work — stay focused."),
+                                Phase::ShortBreak => {
+                                    ("Focus complete", "Nice work. Take a short break.")
+                                }
+                                Phase::LongBreak => {
+                                    ("Session finished", "Great job — enjoy a long break.")
+                                }
                             };
                             crate::notify::notify(summary, body);
                         }
                     }
                     drop(cfg);
-                    refresh();
-                } else {
-                    refresh();
                 }
+                refresh();
                 gtk4::glib::ControlFlow::Continue
             }
         ),
