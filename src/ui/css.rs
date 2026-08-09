@@ -78,10 +78,11 @@ window.tm-root > contents {
   background-image: none;
   box-shadow: none;
   border: none;
+  border-radius: 22px;
 }
 
 .tm-pill {
-  background-color: alpha(@tm_bg, 0.88);
+  background-color: alpha(@tm_bg, __OPACITY__);
   border: 1px solid @tm_border;
   border-radius: 9999px;
   padding: 6px 12px 6px 14px;
@@ -97,7 +98,7 @@ window.tm-root > contents {
 }
 
 .tm-dropdown {
-  background-color: alpha(@tm_bg, 0.88);
+  background-color: alpha(@tm_bg, __OPACITY__);
   border: 1px solid @tm_border;
   border-radius: 22px;
   box-shadow: 0 24px 70px alpha(black, 0.55), 0 2px 12px alpha(black, 0.35);
@@ -314,10 +315,24 @@ scrollbar slider:hover { background-color: @tm_scrollbar_hover; }
 window contents scrollbar slider { min-width: 5px; min-height: 5px; }
 "#;
 
+fn render_template(opacity: f64) -> String {
+    let op = opacity.clamp(0.30, 1.0);
+    let op_s = format!("{op:.2}");
+    TEMPLATE.replace("__OPACITY__", &op_s)
+}
+
 pub fn dark_sheet() -> String {
-    format!("/* Tomato — dark theme */\n{DARK_DEFS}{TEMPLATE}")
+    dark_sheet_with_opacity(0.88)
 }
 
 pub fn light_sheet() -> String {
-    format!("/* Tomato — light theme */\n{LIGHT_DEFS}{TEMPLATE}")
+    light_sheet_with_opacity(0.88)
+}
+
+pub fn dark_sheet_with_opacity(opacity: f64) -> String {
+    format!("/* Tomato — dark theme */\n{DARK_DEFS}{}", render_template(opacity))
+}
+
+pub fn light_sheet_with_opacity(opacity: f64) -> String {
+    format!("/* Tomato — light theme */\n{LIGHT_DEFS}{}", render_template(opacity))
 }
