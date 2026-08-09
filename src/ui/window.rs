@@ -4,12 +4,13 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
-use libadwaita::prelude::*;
+
 
 use crate::config::Config;
 use crate::timer::Timer;
 use crate::todo::TodoStore;
 use crate::ui::{settings_page, tasks_page, timer_page};
+use std::f64::consts::PI;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 enum Corner {
@@ -77,19 +78,17 @@ struct DragState {
 pub fn build(app: &libadwaita::Application) {
     let config = Rc::new(RefCell::new(Config::load()));
 
-    let window = libadwaita::ApplicationWindow::builder()
+    let window = gtk4::ApplicationWindow::builder()
         .application(app)
         .build();
-    window.set_default_size(360, 470);
     window.set_decorated(false);
-    window.add_css_class("tomato-root");
+    window.add_css_class("tm-root");
 
     let cfg_borrow = config.borrow();
     window.set_opacity(cfg_borrow.window.opacity);
 
-    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    root.add_css_class("tomato-card");
-    window.set_content(Some(&root));
+    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+    window.set_child(Some(&root));
 
     let on_layer_shell = gtk4_layer_shell::is_supported();
     let drag_state = Rc::new(RefCell::new(DragState::default()));
@@ -120,21 +119,49 @@ pub fn build(app: &libadwaita::Application) {
     }
     drop(cfg_borrow);
 
-    // Header
-    let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-    header.add_css_class("tomato-header");
+    // ── Pill Header ─────────────────────────────────────────────────────────
+    let pill = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    pill.add_css_class("tm-pill");
 
-    let title = gtk4::Label::new(Some("TOMATO"));
-    title.add_css_class("tomato-title");
-    header.append(&title);
+    let pill_ring = gtk4::DrawingArea::new();
+    pill_ring.set_size_request(24, 24);
+    pill_ring.set_valign(gtk4::Align::Center);
+    pill.append(&pill_ring);
+
+    let pill_time = gtk4::Label::new(Some("25:00"));
+    pill_time.add_css_class("tm-pill-time");
+    pill_time.set_valign(gtk4::Align::Center);
+    pill.append(&pill_time);
 
     let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
-    header.append(&spacer);
+    pill.append(&spacer);
+
+    // Theme toggle and Close button moved to the pill for convenience
+    let pill_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+    let theme_btn = gtk4::Button::new();
+    theme_btn.add_css_class("tm-iconbtn");
+    let style_manager = libadwaita::StyleManager::default();
+    theme_btn.set_icon_name(if style_manager.is_dark() {
+        "weather-clear-symbolic"
+    } else {
+        "weather-clear-night-symbolic"
+    });
+    theme_btn.connect_clicked(|btn| {
+        let sm = libadwaita::StyleManager::default();
+        if sm.is_dark() {
+            sm.set_color_scheme(libadwaita::ColorScheme::ForceLight);
+            btn.set_icon_name("weather-clear-night-symbolic");
+        } else {
+            sm.set_color_scheme(libadwaita::ColorScheme::ForceDark);
+            btn.set_icon_name("weather-clear-symbolic");
+        }
+        crate::ui::reload_theme();
+    });
+    pill_actions.append(&theme_btn);
 
     let close_btn = gtk4::Button::from_icon_name("window-close-symbolic");
-    close_btn.add_css_class("tomato-iconbtn");
-    close_btn.add_css_class("destructive");
+    close_btn.add_css_class("tm-iconbtn");
     close_btn.connect_clicked(gtk4::glib::clone!(
         #[weak]
         window,
@@ -142,24 +169,65 @@ pub fn build(app: &libadwaita::Application) {
             window.close();
         }
     ));
-    header.append(&close_btn);
-    root.append(&header);
+    pill_actions.append(&close_btn);
+    pill.append(&pill_actions);
 
-    // Drag gesture for layer shell live movement.
-    //
-    // Margins are derived from the pointer's *current* widget coordinates and
-    // the window's *current* margin on every event. The pointer's current
-    // position is (press + gesture offset) and the margin is re-read, so moving
-    // the window under the pointer never feeds back into the delta — the old
-    // start-margin accumulation corrupted itself the moment the window tracked
-    // the pointer and made the drag stall or jitter.
-    //
-    // Updates are throttled to one set_margin per compositor frame via a tick
-    // callback: with multiple requests per frame, the requested margin runs
-    // ahead of the position the compositor has actually applied, and the next
-    // event re-bases its delta off that too-far margin — the window overshoots
-    // and wobbles around the pointer. One request per frame keeps requested
-    // == applied, so every delta lands exactly on the pointer.
+    let drag_handle = gtk4::DrawingArea::new();
+    drag_handle.set_size_request(16, 24);
+    drag_handle.set_valign(gtk4::Align::Center);
+    drag_handle.add_css_class("tm-pill-drag");
+    drag_handle.set_draw_func(|_, cr, _, _| {
+        // Simple dots grid using css text color
+        cr.set_source_rgba(0.5, 0.5, 0.5, 0.5);
+        for x in [4.0, 10.0] {
+            for y in [6.0, 12.0, 18.0] {
+                cr.arc(x, y, 1.5, 0.0, 2.0 * PI);
+                let _ = cr.fill();
+            }
+        }
+    });
+    pill.append(&drag_handle);
+    root.append(&pill);
+
+    let revealer = gtk4::Revealer::new();
+    revealer.set_transition_type(gtk4::RevealerTransitionType::SlideDown);
+    revealer.set_transition_duration(250);
+    // Revealed by default? Let's say false, so it's a pill by default.
+    revealer.set_reveal_child(false);
+    revealer.set_visible(false); // Hide completely so it doesn't force window width
+
+    revealer.connect_child_revealed_notify(|r| {
+        if !r.is_child_revealed() {
+            r.set_visible(false);
+        }
+    });
+
+    let click = gtk4::GestureClick::new();
+    click.connect_pressed(gtk4::glib::clone!(
+        #[weak] revealer,
+        move |_, n_press, _, _| {
+            if n_press == 1 {
+                if revealer.reveals_child() {
+                    revealer.set_reveal_child(false);
+                } else {
+                    revealer.set_visible(true);
+                    revealer.set_reveal_child(true);
+                }
+            }
+        }
+    ));
+    pill_ring.add_controller(click);
+
+    let dropdown_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    dropdown_box.add_css_class("tm-dropdown");
+    dropdown_box.set_size_request(340, 480);
+    revealer.set_child(Some(&dropdown_box));
+    root.append(&revealer);
+
+    // Drag gesture for layer-shell live movement. Margins are derived from the
+    // pointer's current widget coords and the window's current margin on every
+    // event, throttled to one set_margin per compositor frame via a tick
+    // callback, so requested == applied and every delta lands on the pointer.
     let drag = gtk4::GestureDrag::new();
     drag.connect_drag_begin(gtk4::glib::clone!(
         #[strong]
@@ -264,20 +332,20 @@ pub fn build(app: &libadwaita::Application) {
             }
         }
     ));
-    header.add_controller(drag);
+    drag_handle.add_controller(drag);
 
-    // Switcher bar
-    let switcher = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
-    switcher.add_css_class("tomato-switcher");
+    // ── Segmented switcher ──────────────────────────────────────────────────
+    let switcher = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+    switcher.add_css_class("tm-seg");
     switcher.set_homogeneous(true);
 
-    let timer_btn = gtk4::ToggleButton::with_label("TIMER");
-    let tasks_btn = gtk4::ToggleButton::with_label("TASKS");
-    let settings_btn = gtk4::ToggleButton::with_label("SETTINGS");
-    timer_btn.set_hexpand(true);
-    tasks_btn.set_hexpand(true);
-    settings_btn.set_hexpand(true);
-
+    let timer_btn = gtk4::ToggleButton::with_label("Timer");
+    let tasks_btn = gtk4::ToggleButton::with_label("Tasks");
+    let settings_btn = gtk4::ToggleButton::with_label("Settings");
+    for b in [&timer_btn, &tasks_btn, &settings_btn] {
+        b.add_css_class("tm-seg-btn");
+        b.set_hexpand(true);
+    }
     tasks_btn.set_group(Some(&timer_btn));
     settings_btn.set_group(Some(&timer_btn));
     timer_btn.set_active(true);
@@ -285,16 +353,19 @@ pub fn build(app: &libadwaita::Application) {
     switcher.append(&timer_btn);
     switcher.append(&tasks_btn);
     switcher.append(&settings_btn);
-    root.append(&switcher);
+    dropdown_box.append(&switcher);
 
+    // ── Pages ───────────────────────────────────────────────────────────────
     let stack = gtk4::Stack::new();
     stack.set_vexpand(true);
+    stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
+    stack.set_transition_duration(140);
 
     let timer = Rc::new(RefCell::new(Timer::new(&config.borrow().timer)));
     let tasks = Rc::new(RefCell::new(TodoStore::load()));
 
     let timer_page_widget =
-        timer_page::build(Rc::clone(&config), Rc::clone(&timer), Rc::clone(&tasks));
+        timer_page::build(Rc::clone(&config), Rc::clone(&timer), Rc::clone(&tasks), &pill_ring, &pill_time);
     stack.add_named(&timer_page_widget, Some("timer"));
 
     let tasks_page_widget = tasks_page::build(Rc::clone(&tasks));
@@ -320,8 +391,6 @@ pub fn build(app: &libadwaita::Application) {
                 } else {
                     Layer::Top
                 });
-
-                // Reset all anchors & apply new ones
                 for edge in [Edge::Left, Edge::Right, Edge::Top, Edge::Bottom] {
                     window.set_anchor(edge, false);
                 }
@@ -340,7 +409,7 @@ pub fn build(app: &libadwaita::Application) {
     let settings_page_widget = settings_page::build(Rc::clone(&config), apply_config_changes);
     stack.add_named(&settings_page_widget, Some("settings"));
 
-    root.append(&stack);
+    dropdown_box.append(&stack);
 
     timer_btn.connect_toggled(gtk4::glib::clone!(
         #[weak]
@@ -370,7 +439,7 @@ pub fn build(app: &libadwaita::Application) {
         }
     ));
 
-    // Keyboard Shortcuts
+    // ── Shortcuts ───────────────────────────────────────────────────────────
     let shortcut_controller = gtk4::ShortcutController::new();
 
     add_shortcut(
