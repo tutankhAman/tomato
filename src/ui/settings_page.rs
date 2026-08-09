@@ -15,116 +15,87 @@ where
     scroller.set_vexpand(true);
     scroller.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
 
-    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
-    page.add_css_class("tomato-page");
+    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    page.add_css_class("tm-page");
     scroller.set_child(Some(&page));
-
-    // ---------- TIMER SETTINGS ----------
-    let timer_title = gtk4::Label::new(Some("TIMER SETTINGS"));
-    timer_title.set_xalign(0.0);
-    timer_title.add_css_class("settings-group-title");
-    page.append(&timer_title);
 
     let cfg = config.borrow();
 
-    // Focus Minutes
-    let focus_spin = gtk4::SpinButton::with_range(1.0, 180.0, 1.0);
-    focus_spin.set_value(cfg.timer.focus_minutes as f64);
-    let row_focus = make_setting_row("Focus (minutes)", &focus_spin);
-    page.append(&row_focus);
+    // ── Timer ───────────────────────────────────────────────────────────────
+    page.append(&group_title("TIMER"));
+    let timer_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    timer_group.add_css_class("tm-group");
 
-    // Short Break
-    let short_spin = gtk4::SpinButton::with_range(1.0, 60.0, 1.0);
-    short_spin.set_value(cfg.timer.short_break_minutes as f64);
-    let row_short = make_setting_row("Short Break (minutes)", &short_spin);
-    page.append(&row_short);
+    let focus_spin = spin(1.0, 180.0, cfg.timer.focus_minutes as f64);
+    append_row(&timer_group, "Focus minutes", &focus_spin, false);
 
-    // Long Break
-    let long_spin = gtk4::SpinButton::with_range(1.0, 60.0, 1.0);
-    long_spin.set_value(cfg.timer.long_break_minutes as f64);
-    let row_long = make_setting_row("Long Break (minutes)", &long_spin);
-    page.append(&row_long);
+    let short_spin = spin(1.0, 60.0, cfg.timer.short_break_minutes as f64);
+    append_row(&timer_group, "Short break", &short_spin, true);
 
-    // Cycles before Long Break
-    let cycles_spin = gtk4::SpinButton::with_range(1.0, 20.0, 1.0);
-    cycles_spin.set_value(cfg.timer.cycles_before_long_break as f64);
-    let row_cycles = make_setting_row("Cycles before Long Break", &cycles_spin);
-    page.append(&row_cycles);
+    let long_spin = spin(1.0, 60.0, cfg.timer.long_break_minutes as f64);
+    append_row(&timer_group, "Long break", &long_spin, true);
 
-    // Auto-start Breaks
-    let auto_break_switch = gtk4::Switch::new();
-    auto_break_switch.set_active(cfg.timer.auto_start_breaks);
-    auto_break_switch.set_valign(gtk4::Align::Center);
-    let row_auto_break = make_setting_row("Auto-start Breaks", &auto_break_switch);
-    page.append(&row_auto_break);
+    let cycles_spin = spin(1.0, 20.0, cfg.timer.cycles_before_long_break as f64);
+    append_row(&timer_group, "Cycles before long break", &cycles_spin, true);
+    page.append(&timer_group);
 
-    // Auto-start Focus
-    let auto_focus_switch = gtk4::Switch::new();
-    auto_focus_switch.set_active(cfg.timer.auto_start_focus);
-    auto_focus_switch.set_valign(gtk4::Align::Center);
-    let row_auto_focus = make_setting_row("Auto-start Focus", &auto_focus_switch);
-    page.append(&row_auto_focus);
+    // ── Automation ──────────────────────────────────────────────────────────
+    page.append(&group_title("AUTOMATION"));
+    let auto_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    auto_group.add_css_class("tm-group");
 
-    // ---------- NOTIFICATION SETTINGS ----------
-    let notify_title = gtk4::Label::new(Some("NOTIFICATIONS"));
-    notify_title.set_xalign(0.0);
-    notify_title.add_css_class("settings-group-title");
-    page.append(&notify_title);
+    let auto_break_switch = toggle(cfg.timer.auto_start_breaks);
+    append_row(&auto_group, "Auto-start breaks", &auto_break_switch, false);
 
-    let notify_switch = gtk4::Switch::new();
-    notify_switch.set_active(cfg.notifications.enabled);
-    notify_switch.set_valign(gtk4::Align::Center);
-    let row_notify = make_setting_row("Desktop Notifications", &notify_switch);
-    page.append(&row_notify);
+    let auto_focus_switch = toggle(cfg.timer.auto_start_focus);
+    append_row(&auto_group, "Auto-start focus", &auto_focus_switch, true);
+    page.append(&auto_group);
 
-    let sound_switch = gtk4::Switch::new();
-    sound_switch.set_active(cfg.notifications.sound);
-    sound_switch.set_valign(gtk4::Align::Center);
-    let row_sound = make_setting_row("Sound Alerts", &sound_switch);
-    page.append(&row_sound);
+    // ── Notifications ───────────────────────────────────────────────────────
+    page.append(&group_title("NOTIFICATIONS"));
+    let notif_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    notif_group.add_css_class("tm-group");
 
-    // ---------- WINDOW SETTINGS ----------
-    let win_title = gtk4::Label::new(Some("WINDOW & DISPLAY"));
-    win_title.set_xalign(0.0);
-    win_title.add_css_class("settings-group-title");
-    page.append(&win_title);
+    let notify_switch = toggle(cfg.notifications.enabled);
+    append_row(&notif_group, "Desktop notifications", &notify_switch, false);
 
-    // Anchor DropDown
+    let sound_switch = toggle(cfg.notifications.sound);
+    append_row(&notif_group, "Sound alerts", &sound_switch, true);
+    page.append(&notif_group);
+
+    // ── Window ──────────────────────────────────────────────────────────────
+    page.append(&group_title("WINDOW"));
+    let win_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    win_group.add_css_class("tm-group");
+
     let anchors = ["top-right", "top-left", "bottom-right", "bottom-left", "center"];
     let model = gtk4::StringList::new(&anchors);
     let anchor_combo = gtk4::DropDown::new(Some(model), None::<&gtk4::Expression>);
+    anchor_combo.add_css_class("tm-spin");
     let initial_idx = anchors
         .iter()
         .position(|&a| a == cfg.window.anchor)
         .unwrap_or(0) as u32;
     anchor_combo.set_selected(initial_idx);
-    let row_anchor = make_setting_row("Screen Anchor", &anchor_combo);
-    page.append(&row_anchor);
+    append_row(&win_group, "Screen anchor", &anchor_combo, false);
 
-    // Window Opacity
     let opacity_scale = gtk4::Scale::with_range(gtk4::Orientation::Horizontal, 0.3, 1.0, 0.05);
+    opacity_scale.add_css_class("tm-scale");
     opacity_scale.set_value(cfg.window.opacity);
-    opacity_scale.set_width_request(120);
-    let row_opacity = make_setting_row("Opacity", &opacity_scale);
-    page.append(&row_opacity);
+    opacity_scale.set_size_request(120, -1);
+    opacity_scale.set_valign(gtk4::Align::Center);
+    append_row(&win_group, "Opacity", &opacity_scale, true);
 
-    // Always on Top
-    let aot_switch = gtk4::Switch::new();
-    aot_switch.set_active(cfg.window.always_on_top);
-    aot_switch.set_valign(gtk4::Align::Center);
-    let row_aot = make_setting_row("Always on Top / Overlay", &aot_switch);
-    page.append(&row_aot);
+    let aot_switch = toggle(cfg.window.always_on_top);
+    append_row(&win_group, "Always on top", &aot_switch, true);
 
-    // Compact Mode
-    let compact_switch = gtk4::Switch::new();
-    compact_switch.set_active(cfg.window.compact);
-    compact_switch.set_valign(gtk4::Align::Center);
-    let row_compact = make_setting_row("Compact Mode", &compact_switch);
-    page.append(&row_compact);
+    let compact_switch = toggle(cfg.window.compact);
+    append_row(&win_group, "Compact mode", &compact_switch, true);
+    page.append(&win_group);
 
     drop(cfg);
 
-    // Connect callbacks to update config & save atomically
+    // ── Persistence ─────────────────────────────────────────────────────────
     let save_config = gtk4::glib::clone!(
         #[strong]
         config,
@@ -138,97 +109,46 @@ where
         }
     );
 
-    focus_spin.connect_value_changed(gtk4::glib::clone!(
-        #[strong]
-        config,
-        #[strong]
-        save_config,
-        move |spin| {
-            config.borrow_mut().timer.focus_minutes = spin.value() as u32;
-            save_config();
-        }
-    ));
+    macro_rules! bind_spin {
+        ($spin:expr, $field:ident, $sub:ident) => {
+            $spin.connect_value_changed(gtk4::glib::clone!(
+                #[strong]
+                config,
+                #[strong]
+                save_config,
+                move |s| {
+                    config.borrow_mut().$sub.$field = s.value() as u32;
+                    save_config();
+                }
+            ));
+        };
+    }
+    bind_spin!(focus_spin, focus_minutes, timer);
+    bind_spin!(short_spin, short_break_minutes, timer);
+    bind_spin!(long_spin, long_break_minutes, timer);
+    bind_spin!(cycles_spin, cycles_before_long_break, timer);
 
-    short_spin.connect_value_changed(gtk4::glib::clone!(
-        #[strong]
-        config,
-        #[strong]
-        save_config,
-        move |spin| {
-            config.borrow_mut().timer.short_break_minutes = spin.value() as u32;
-            save_config();
-        }
-    ));
-
-    long_spin.connect_value_changed(gtk4::glib::clone!(
-        #[strong]
-        config,
-        #[strong]
-        save_config,
-        move |spin| {
-            config.borrow_mut().timer.long_break_minutes = spin.value() as u32;
-            save_config();
-        }
-    ));
-
-    cycles_spin.connect_value_changed(gtk4::glib::clone!(
-        #[strong]
-        config,
-        #[strong]
-        save_config,
-        move |spin| {
-            config.borrow_mut().timer.cycles_before_long_break = spin.value() as u32;
-            save_config();
-        }
-    ));
-
-    auto_break_switch.connect_state_set(gtk4::glib::clone!(
-        #[strong]
-        config,
-        #[strong]
-        save_config,
-        move |_, state| {
-            config.borrow_mut().timer.auto_start_breaks = state;
-            save_config();
-            gtk4::glib::Propagation::Proceed
-        }
-    ));
-
-    auto_focus_switch.connect_state_set(gtk4::glib::clone!(
-        #[strong]
-        config,
-        #[strong]
-        save_config,
-        move |_, state| {
-            config.borrow_mut().timer.auto_start_focus = state;
-            save_config();
-            gtk4::glib::Propagation::Proceed
-        }
-    ));
-
-    notify_switch.connect_state_set(gtk4::glib::clone!(
-        #[strong]
-        config,
-        #[strong]
-        save_config,
-        move |_, state| {
-            config.borrow_mut().notifications.enabled = state;
-            save_config();
-            gtk4::glib::Propagation::Proceed
-        }
-    ));
-
-    sound_switch.connect_state_set(gtk4::glib::clone!(
-        #[strong]
-        config,
-        #[strong]
-        save_config,
-        move |_, state| {
-            config.borrow_mut().notifications.sound = state;
-            save_config();
-            gtk4::glib::Propagation::Proceed
-        }
-    ));
+    macro_rules! bind_switch {
+        ($sw:expr, $field:ident, $sub:ident) => {
+            $sw.connect_state_set(gtk4::glib::clone!(
+                #[strong]
+                config,
+                #[strong]
+                save_config,
+                move |_, state| {
+                    config.borrow_mut().$sub.$field = state;
+                    save_config();
+                    gtk4::glib::Propagation::Proceed
+                }
+            ));
+        };
+    }
+    bind_switch!(auto_break_switch, auto_start_breaks, timer);
+    bind_switch!(auto_focus_switch, auto_start_focus, timer);
+    bind_switch!(notify_switch, enabled, notifications);
+    bind_switch!(sound_switch, sound, notifications);
+    bind_switch!(aot_switch, always_on_top, window);
+    bind_switch!(compact_switch, compact, window);
 
     anchor_combo.connect_selected_notify(gtk4::glib::clone!(
         #[strong]
@@ -255,43 +175,42 @@ where
         }
     ));
 
-    aot_switch.connect_state_set(gtk4::glib::clone!(
-        #[strong]
-        config,
-        #[strong]
-        save_config,
-        move |_, state| {
-            config.borrow_mut().window.always_on_top = state;
-            save_config();
-            gtk4::glib::Propagation::Proceed
-        }
-    ));
-
-    compact_switch.connect_state_set(gtk4::glib::clone!(
-        #[strong]
-        config,
-        #[strong]
-        save_config,
-        move |_, state| {
-            config.borrow_mut().window.compact = state;
-            save_config();
-            gtk4::glib::Propagation::Proceed
-        }
-    ));
-
     scroller.upcast()
 }
 
-fn make_setting_row(label_text: &str, widget: &impl IsA<gtk4::Widget>) -> gtk4::Box {
-    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    row.add_css_class("settings-row");
+fn group_title(text: &str) -> gtk4::Label {
+    let lbl = gtk4::Label::new(Some(text));
+    lbl.set_xalign(0.0);
+    lbl.add_css_class("tm-group-title");
+    lbl
+}
 
-    let lbl = gtk4::Label::new(Some(label_text));
+fn spin(min: f64, max: f64, value: f64) -> gtk4::SpinButton {
+    let s = gtk4::SpinButton::with_range(min, max, 1.0);
+    s.add_css_class("tm-spin");
+    s.set_value(value);
+    s.set_valign(gtk4::Align::Center);
+    s
+}
+
+fn toggle(active: bool) -> gtk4::Switch {
+    let s = gtk4::Switch::new();
+    s.set_active(active);
+    s.set_valign(gtk4::Align::Center);
+    s
+}
+
+fn append_row(group: &gtk4::Box, label: &str, widget: &impl IsA<gtk4::Widget>, separator: bool) {
+    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    row.add_css_class("tm-setrow");
+    if separator {
+        row.add_css_class("tm-setrow-sep");
+    }
+    let lbl = gtk4::Label::new(Some(label));
     lbl.set_hexpand(true);
     lbl.set_xalign(0.0);
-    lbl.add_css_class("settings-label");
-
+    lbl.add_css_class("tm-setlabel");
     row.append(&lbl);
     row.append(widget);
-    row
+    group.append(&row);
 }
