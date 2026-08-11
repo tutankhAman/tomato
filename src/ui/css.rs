@@ -87,14 +87,16 @@ window.tm-root > contents {
   border-radius: 9999px;
   padding: 6px 12px 6px 14px;
   box-shadow: 0 4px 16px alpha(black, 0.45);
-  /* Pill width eases with the dropdown — premium, high-framerate.
-     Collapsed is its natural width; expanded locks to the dropdown width. */
+  /* Width is driven at 60fps by a tick callback (see window.rs) rather
+     than a CSS min-width transition — CSS transitions on layout properties
+     skip child re-measure on some GTK frames, which manifested as
+     "ring/theme/close cut off until hover". Manual tick forces
+     queue_resize + queue_draw every frame, so it stays high-framerate
+     and never leaves a half-painted pill. */
   min-width: 220px;
-  transition: min-width 300ms cubic-bezier(0.2, 0, 0, 1),
-              box-shadow 220ms ease;
 }
 .tm-pill-open {
-  min-width: 316px;
+  /* Open shadow is set inline during the width tick to stay in sync. */
   box-shadow: 0 2px 10px alpha(black, 0.30);
 }
 
