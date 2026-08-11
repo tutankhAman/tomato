@@ -1,5 +1,3 @@
-tomato
-
 a sticky pomodoro timer and todo tracker for linux wayland. rust, gtk4,
 libadwaita. it pins itself to a screen corner and counts down while you work.
 no electron, no cloud, no account.
