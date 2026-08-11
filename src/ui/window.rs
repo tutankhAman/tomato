@@ -194,51 +194,65 @@ pub fn build(app: &libadwaita::Application) {
     pill.append(&drag_handle);
     root.append(&pill);
 
-    // Width contract: the layer-shell window is width-locked to 340 so the pill
-    // never snaps wide/narrow when the dropdown slides. Pill stays centered at
-    // its natural width; only height animates. This is the #1 jank fix — without
-    // it GTK resizes width every frame and the pill stretches mid-animation.
+    // Layout contract:
+    // - The pill's width animation is CSS-driven (min-width) so the layer-shell
+    //   window size stays locked at 340 and the compositor never re-negotiates
+    //   width mid-flight. No size-allocate loop, no dropped frames.
+    // - Vertical motion is the revealer's SlideDown. Giving the root a fixed
+    //   inter-child spacing keeps the pill's rounded bottom edge outside the
+    //   revealer's clip — that's the "broken in half vertically" fix. The
+    //   previous configuration (revealer Overflow::Hidden + root spacing 0
+    //   + dropdown margin-top) put the pill edge right on the clip boundary
+    //   while both animations ran, so the pill's bottom was sliced off.
     window.set_size_request(340, -1);
     root.set_halign(gtk4::Align::Fill);
     root.set_hexpand(true);
+    root.set_valign(gtk4::Align::Start);
+    root.set_spacing(6);
+    root.set_overflow(gtk4::Overflow::Visible);
     pill.set_halign(gtk4::Align::Center);
     pill.set_hexpand(false);
-    // Remove the old root spacing (6px) that left a visible gap even when the
-    // revealer was collapsed; gap is now owned by the dropdown's top margin and
-    // clips cleanly to 0 when closed.
-    root.set_spacing(0);
+    pill.set_valign(gtk4::Align::Start);
+    pill.set_overflow(gtk4::Overflow::Visible);
 
     let dropdown_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     dropdown_box.add_css_class("tm-dropdown");
     dropdown_box.set_size_request(340, 480);
+    dropdown_box.set_overflow(gtk4::Overflow::Hidden);
+    dropdown_box.set_valign(gtk4::Align::Start);
 
     let revealer = gtk4::Revealer::new();
     revealer.set_transition_type(gtk4::RevealerTransitionType::SlideDown);
-    revealer.set_transition_duration(280);
+    revealer.set_transition_duration(300);
     revealer.set_reveal_child(false);
     revealer.set_halign(gtk4::Align::Fill);
     revealer.set_hexpand(true);
+    revealer.set_valign(gtk4::Align::Start);
     revealer.set_overflow(gtk4::Overflow::Hidden);
     revealer.set_child(Some(&dropdown_box));
     root.append(&revealer);
 
-    // Single, debounced toggle. Open is a touch slower (280ms) than close
-    // (220ms) — feels responsive without feeling abrupt. Rapid taps mid-flight
-    // are ignored; that was the main "messed up pill" cause (double-toggle
-    // + simultaneous width+height resize).
+    // Bring back pill resize — but now as a CSS-driven min-width animation
+    // that stays in lockstep with the revealer (same easing/duration) and
+    // never breaks the pill's vertical layout. Debounce prevents double-
+    // toggling mid-flight which previously left the pill half-clipped.
     let toggle = {
         let revealer = revealer.clone();
+        let pill_clone = pill.clone();
         let dropdown_box_clone = dropdown_box.clone();
         Rc::new(move || {
             if revealer.is_child_revealed() != revealer.reveals_child() {
                 return;
             }
             let expanding = !revealer.reveals_child();
-            revealer.set_transition_duration(if expanding { 280 } else { 220 });
-            // Used only for the subtle opacity nudge in css.rs.
+            // Keep JS/Css timing in sync: pill CSS is 320ms, revealer 300ms —
+            // close feels ~60ms snappier than open.
+            revealer.set_transition_duration(if expanding { 300 } else { 240 });
             if expanding {
+                pill_clone.add_css_class("tm-pill-open");
                 dropdown_box_clone.add_css_class("tm-dropdown-open");
             } else {
+                pill_clone.remove_css_class("tm-pill-open");
                 dropdown_box_clone.remove_css_class("tm-dropdown-open");
             }
             revealer.set_reveal_child(expanding);
