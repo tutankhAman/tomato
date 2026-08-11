@@ -68,8 +68,8 @@ fn drag_sign_y(corner: Corner) -> i32 {
 #[derive(Default)]
 struct DragState {
     active: bool,
-    press_x: f64,
-    press_y: f64,
+    start_margin_x: i32,
+    start_margin_y: i32,
     corner: Corner,
     pending: Option<(i32, i32)>,
     tick: Option<gtk4::TickCallbackId>,
@@ -324,14 +324,16 @@ pub fn build(app: &libadwaita::Application) {
         window,
         #[strong]
         on_layer_shell,
-        move |_g, x, y| {
+        move |_g, _x, _y| {
             let mut s = drag_state.borrow_mut();
             if !on_layer_shell || s.corner == Corner::Center {
                 return;
             }
             s.active = true;
-            s.press_x = x;
-            s.press_y = y;
+            if let (Some(h), Some(v)) = (h_edge(s.corner), v_edge(s.corner)) {
+                s.start_margin_x = window.margin(h);
+                s.start_margin_y = window.margin(v);
+            }
             s.pending = None;
             if s.tick.is_none() {
                 let tick = window.add_tick_callback(gtk4::glib::clone!(
@@ -363,8 +365,6 @@ pub fn build(app: &libadwaita::Application) {
     drag.connect_drag_update(gtk4::glib::clone!(
         #[strong]
         drag_state,
-        #[weak]
-        window,
         #[strong]
         on_layer_shell,
         move |_g, dx, dy| {
@@ -372,19 +372,10 @@ pub fn build(app: &libadwaita::Application) {
             if !on_layer_shell || !s.active || s.corner == Corner::Center {
                 return;
             }
-            let (Some(h), Some(v)) = (h_edge(s.corner), v_edge(s.corner)) else {
-                return;
-            };
-            let x_now = s.press_x + dx;
-            let y_now = s.press_y + dy;
-            let margin_x = (window.margin(h) as f64
-                + (x_now - s.press_x) * drag_sign_x(s.corner) as f64)
-                .round()
-                .max(0.0) as i32;
-            let margin_y = (window.margin(v) as f64
-                + (y_now - s.press_y) * drag_sign_y(s.corner) as f64)
-                .round()
-                .max(0.0) as i32;
+            let margin_x =
+                (s.start_margin_x as f64 + dx * drag_sign_x(s.corner) as f64).round().max(0.0) as i32;
+            let margin_y =
+                (s.start_margin_y as f64 + dy * drag_sign_y(s.corner) as f64).round().max(0.0) as i32;
             s.pending = Some((margin_x, margin_y));
         }
     ));

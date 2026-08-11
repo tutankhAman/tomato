@@ -130,7 +130,7 @@ pub fn config_path() -> PathBuf {
 impl Config {
     pub fn load() -> Config {
         let path = config_path();
-        match fs::read_to_string(&path) {
+        let mut cfg: Config = match fs::read_to_string(&path) {
             Ok(content) => match toml::from_str(&content) {
                 Ok(cfg) => cfg,
                 Err(e) => {
@@ -144,7 +144,14 @@ impl Config {
                 }
                 Config::default()
             }
-        }
+        };
+        // Clamp window geometry that can push the layer-shell surface off-screen
+        // (e.g. a previous drag bug could persist 12k+ margins). Keep the window
+        // at least partially visible on any monitor up to 4K.
+        cfg.window.margin_x = cfg.window.margin_x.clamp(0, 4000);
+        cfg.window.margin_y = cfg.window.margin_y.clamp(0, 4000);
+        cfg.window.opacity = cfg.window.opacity.clamp(0.30, 1.0);
+        cfg
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
