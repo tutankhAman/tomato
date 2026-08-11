@@ -1,3 +1,6 @@
+<img width="2560" height="1600" alt="Screenshot_20260811_145920" src="https://github.com/user-attachments/assets/27165dff-84e1-4617-adc1-d551dbbf916e" />
+
+
 a sticky pomodoro timer and todo tracker for linux wayland. rust, gtk4,
 libadwaita. it pins itself to a screen corner and counts down while you work.
 no electron, no cloud, no account.
@@ -16,7 +19,7 @@ features
 - survives restarts: timer state is saved and fast-forwards through time spent
   closed, so a running session resumes where it left off.
 - notifications on phase change, silent when no daemon is around.
-- dark, compact, opacity configurable.
+- theme and opacity configurable.
 
 build
 
