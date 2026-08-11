@@ -23,24 +23,94 @@ where
 
     // ── Timer ───────────────────────────────────────────────────────────────
     page.append(&group_title("TIMER"));
+    page.append(&group_desc("Focus & break lengths. Presets set all four at once."));
+
     let timer_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     timer_group.add_css_class("tm-group");
 
+    // Preset segmented control
+    let preset_wrap = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+    preset_wrap.add_css_class("tm-seg");
+    preset_wrap.set_homogeneous(true);
+    // Give presets a little breathing room inside the group
+    let preset_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    preset_row.add_css_class("tm-setrow");
+    let preset_label = gtk4::Label::new(Some("Preset"));
+    preset_label.add_css_class("tm-setlabel");
+    preset_label.set_hexpand(true);
+    preset_label.set_xalign(0.0);
+    preset_row.append(&preset_label);
+    preset_row.append(&preset_wrap);
+
+    let classic_btn = gtk4::ToggleButton::with_label("Classic  25 / 5");
+    let deep_btn = gtk4::ToggleButton::with_label("Deep  50 / 10");
+    let custom_btn = gtk4::ToggleButton::with_label("Custom");
+    for b in [&classic_btn, &deep_btn, &custom_btn] {
+        b.add_css_class("tm-seg-btn");
+        b.set_hexpand(true);
+    }
+    deep_btn.set_group(Some(&classic_btn));
+    custom_btn.set_group(Some(&classic_btn));
+
+    preset_wrap.append(&classic_btn);
+    preset_wrap.append(&deep_btn);
+    preset_wrap.append(&custom_btn);
+
+    // Determine initial preset selection
+    let is_classic = cfg.timer.focus_minutes == 25
+        && cfg.timer.short_break_minutes == 5
+        && cfg.timer.long_break_minutes == 15
+        && cfg.timer.cycles_before_long_break == 4;
+    let is_deep = cfg.timer.focus_minutes == 50
+        && cfg.timer.short_break_minutes == 10
+        && cfg.timer.long_break_minutes == 20
+        && cfg.timer.cycles_before_long_break == 4;
+    if is_classic {
+        classic_btn.set_active(true);
+    } else if is_deep {
+        deep_btn.set_active(true);
+    } else {
+        custom_btn.set_active(true);
+    }
+
+    timer_group.append(&preset_row);
+
     let focus_spin = spin(1.0, 180.0, cfg.timer.focus_minutes as f64);
-    append_row(&timer_group, "Focus minutes", &focus_spin, false);
+    let focus_box = with_suffix(&focus_spin, "min");
+    append_row(&timer_group, "Focus", &focus_box, true);
 
     let short_spin = spin(1.0, 60.0, cfg.timer.short_break_minutes as f64);
-    append_row(&timer_group, "Short break", &short_spin, true);
+    let short_box = with_suffix(&short_spin, "min");
+    append_row(&timer_group, "Short break", &short_box, true);
 
     let long_spin = spin(1.0, 60.0, cfg.timer.long_break_minutes as f64);
-    append_row(&timer_group, "Long break", &long_spin, true);
+    let long_box = with_suffix(&long_spin, "min");
+    append_row(&timer_group, "Long break", &long_box, true);
 
-    let cycles_spin = spin(1.0, 20.0, cfg.timer.cycles_before_long_break as f64);
-    append_row(&timer_group, "Cycles before long break", &cycles_spin, true);
+    // Cycles row with live dots preview
+    let cycles_spin = spin(1.0, 12.0, cfg.timer.cycles_before_long_break as f64);
+    let dots_preview = gtk4::Box::new(gtk4::Orientation::Horizontal, 5);
+    dots_preview.add_css_class("tm-dots");
+    dots_preview.set_valign(gtk4::Align::Center);
+    rebuild_dots(&dots_preview, cfg.timer.cycles_before_long_break);
+    let cycles_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    cycles_box.append(&cycles_spin);
+    cycles_box.append(&dots_preview);
+    cycles_box.set_valign(gtk4::Align::Center);
+    append_row(&timer_group, "Sessions before long break", &cycles_box, false);
+    // small hint under cycles
+    let cycles_hint = gtk4::Label::new(Some("How many focus sessions before a long break."));
+    cycles_hint.add_css_class("tm-hint");
+    cycles_hint.set_xalign(0.0);
+    cycles_hint.set_margin_start(14);
+    cycles_hint.set_margin_bottom(8);
+    timer_group.append(&cycles_hint);
+
     page.append(&timer_group);
 
     // ── Automation ──────────────────────────────────────────────────────────
     page.append(&group_title("AUTOMATION"));
+    page.append(&group_desc("What starts automatically when a phase ends."));
     let auto_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     auto_group.add_css_class("tm-group");
 
@@ -48,20 +118,13 @@ where
     append_row(&auto_group, "Auto-start breaks", &auto_break_switch, false);
 
     let auto_focus_switch = toggle(cfg.timer.auto_start_focus);
-    append_row(&auto_group, "Auto-start focus", &auto_focus_switch, true);
+    append_row(&auto_group, "Auto-start focus sessions", &auto_focus_switch, true);
     page.append(&auto_group);
-
-    // ── Notifications ───────────────────────────────────────────────────────
-    page.append(&group_title("NOTIFICATIONS"));
-    let notif_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    notif_group.add_css_class("tm-group");
-
-    let notify_switch = toggle(cfg.notifications.enabled);
-    append_row(&notif_group, "Desktop notifications", &notify_switch, false);
-    page.append(&notif_group);
 
     // ── Window ──────────────────────────────────────────────────────────────
     page.append(&group_title("WINDOW"));
+    page.append(&group_desc("Placement & appearance. Drag the pill handle to fine-tune."));
+
     let win_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     win_group.add_css_class("tm-group");
 
@@ -74,18 +137,39 @@ where
         .position(|&a| a == cfg.window.anchor)
         .unwrap_or(0) as u32;
     anchor_combo.set_selected(initial_idx);
-    append_row(&win_group, "Screen anchor", &anchor_combo, false);
+    append_row(&win_group, "Screen corner", &anchor_combo, false);
 
     let opacity_scale = gtk4::Scale::with_range(gtk4::Orientation::Horizontal, 0.3, 1.0, 0.05);
     opacity_scale.add_css_class("tm-scale");
     opacity_scale.set_value(cfg.window.opacity);
-    opacity_scale.set_size_request(120, -1);
+    opacity_scale.set_size_request(140, -1);
     opacity_scale.set_valign(gtk4::Align::Center);
-    append_row(&win_group, "Opacity", &opacity_scale, true);
+    opacity_scale.set_draw_value(false);
+    let opacity_val = gtk4::Label::new(Some(&format!("{:.0}%", cfg.window.opacity * 100.0)));
+    opacity_val.add_css_class("tm-opacity-val");
+    opacity_val.set_width_chars(4);
+    opacity_val.set_xalign(1.0);
+    let opacity_reset = gtk4::Button::from_icon_name("view-refresh-symbolic");
+    opacity_reset.add_css_class("tm-iconbtn");
+    opacity_reset.set_tooltip_text(Some("Reset to 97%"));
+    let opacity_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    opacity_box.set_valign(gtk4::Align::Center);
+    opacity_box.append(&opacity_scale);
+    opacity_box.append(&opacity_val);
+    opacity_box.append(&opacity_reset);
+    append_row(&win_group, "Opacity", &opacity_box, true);
 
     let aot_switch = toggle(cfg.window.always_on_top);
-    append_row(&win_group, "Always on top", &aot_switch, true);
+    append_row(&win_group, "Always on top (overlay layer)", &aot_switch, true);
     page.append(&win_group);
+
+    // ── Notifications ───────────────────────────────────────────────────────
+    page.append(&group_title("NOTIFICATIONS"));
+    let notif_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    notif_group.add_css_class("tm-group");
+    let notify_switch = toggle(cfg.notifications.enabled);
+    append_row(&notif_group, "Desktop notifications on phase change", &notify_switch, false);
+    page.append(&notif_group);
 
     drop(cfg);
 
@@ -103,6 +187,145 @@ where
         }
     );
 
+    // Guard to avoid feedback loops between preset toggles and spins.
+    let guard = Rc::new(RefCell::new(false));
+
+    // Helpers to apply a preset atomically.
+    let apply_classic = gtk4::glib::clone!(
+        #[strong]
+        config,
+        #[strong]
+        save_config,
+        #[strong]
+        guard,
+        #[weak]
+        focus_spin,
+        #[weak]
+        short_spin,
+        #[weak]
+        long_spin,
+        #[weak]
+        cycles_spin,
+        move || {
+            *guard.borrow_mut() = true;
+            {
+                let mut cfg = config.borrow_mut();
+                cfg.timer.focus_minutes = 25;
+                cfg.timer.short_break_minutes = 5;
+                cfg.timer.long_break_minutes = 15;
+                cfg.timer.cycles_before_long_break = 4;
+            }
+            focus_spin.set_value(25.0);
+            short_spin.set_value(5.0);
+            long_spin.set_value(15.0);
+            cycles_spin.set_value(4.0);
+            *guard.borrow_mut() = false;
+            save_config();
+        }
+    );
+    let apply_deep = gtk4::glib::clone!(
+        #[strong]
+        config,
+        #[strong]
+        save_config,
+        #[strong]
+        guard,
+        #[weak]
+        focus_spin,
+        #[weak]
+        short_spin,
+        #[weak]
+        long_spin,
+        #[weak]
+        cycles_spin,
+        move || {
+            *guard.borrow_mut() = true;
+            {
+                let mut cfg = config.borrow_mut();
+                cfg.timer.focus_minutes = 50;
+                cfg.timer.short_break_minutes = 10;
+                cfg.timer.long_break_minutes = 20;
+                cfg.timer.cycles_before_long_break = 4;
+            }
+            focus_spin.set_value(50.0);
+            short_spin.set_value(10.0);
+            long_spin.set_value(20.0);
+            cycles_spin.set_value(4.0);
+            *guard.borrow_mut() = false;
+            save_config();
+        }
+    );
+
+    classic_btn.connect_toggled(gtk4::glib::clone!(
+        #[strong]
+        guard,
+        #[strong]
+        apply_classic,
+        move |b| {
+            if *guard.borrow() {
+                return;
+            }
+            if b.is_active() {
+                apply_classic();
+            }
+        }
+    ));
+    deep_btn.connect_toggled(gtk4::glib::clone!(
+        #[strong]
+        guard,
+        #[strong]
+        apply_deep,
+        move |b| {
+            if *guard.borrow() {
+                return;
+            }
+            if b.is_active() {
+                apply_deep();
+            }
+        }
+    ));
+    // Custom toggle does nothing on its own; it gets activated by manual edits.
+
+    // Sync preset selection when spins change
+    let sync_preset = gtk4::glib::clone!(
+        #[strong]
+        guard,
+        #[weak]
+        classic_btn,
+        #[weak]
+        deep_btn,
+        #[weak]
+        custom_btn,
+        #[weak]
+        focus_spin,
+        #[weak]
+        short_spin,
+        #[weak]
+        long_spin,
+        #[weak]
+        cycles_spin,
+        move || {
+            if *guard.borrow() {
+                return;
+            }
+            let f = focus_spin.value() as u32;
+            let s = short_spin.value() as u32;
+            let l = long_spin.value() as u32;
+            let c = cycles_spin.value() as u32;
+            let is_c = f == 25 && s == 5 && l == 15 && c == 4;
+            let is_d = f == 50 && s == 10 && l == 20 && c == 4;
+            *guard.borrow_mut() = true;
+            if is_c {
+                classic_btn.set_active(true);
+            } else if is_d {
+                deep_btn.set_active(true);
+            } else {
+                custom_btn.set_active(true);
+            }
+            *guard.borrow_mut() = false;
+        }
+    );
+
     macro_rules! bind_spin {
         ($spin:expr, $field:ident, $sub:ident) => {
             $spin.connect_value_changed(gtk4::glib::clone!(
@@ -110,8 +333,25 @@ where
                 config,
                 #[strong]
                 save_config,
+                #[strong]
+                guard,
+                #[strong]
+                sync_preset,
+                #[weak]
+                dots_preview,
                 move |s| {
+                    if *guard.borrow() {
+                        // Still update dots if this is the cycles spin
+                        if stringify!($field) == "cycles_before_long_break" {
+                            rebuild_dots(&dots_preview, s.value() as u32);
+                        }
+                        return;
+                    }
                     config.borrow_mut().$sub.$field = s.value() as u32;
+                    if stringify!($field) == "cycles_before_long_break" {
+                        rebuild_dots(&dots_preview, s.value() as u32);
+                    }
+                    sync_preset();
                     save_config();
                 }
             ));
@@ -161,8 +401,28 @@ where
         config,
         #[strong]
         save_config,
+        #[weak]
+        opacity_val,
         move |scale| {
-            config.borrow_mut().window.opacity = scale.value();
+            let v = scale.value();
+            config.borrow_mut().window.opacity = v;
+            opacity_val.set_label(&format!("{:.0}%", v * 100.0));
+            save_config();
+        }
+    ));
+    opacity_reset.connect_clicked(gtk4::glib::clone!(
+        #[strong]
+        config,
+        #[strong]
+        save_config,
+        #[weak]
+        opacity_scale,
+        #[weak]
+        opacity_val,
+        move |_| {
+            opacity_scale.set_value(0.97);
+            opacity_val.set_label("97%");
+            config.borrow_mut().window.opacity = 0.97;
             save_config();
         }
     ));
@@ -174,6 +434,14 @@ fn group_title(text: &str) -> gtk4::Label {
     let lbl = gtk4::Label::new(Some(text));
     lbl.set_xalign(0.0);
     lbl.add_css_class("tm-group-title");
+    lbl
+}
+
+fn group_desc(text: &str) -> gtk4::Label {
+    let lbl = gtk4::Label::new(Some(text));
+    lbl.set_xalign(0.0);
+    lbl.set_wrap(true);
+    lbl.add_css_class("tm-group-desc");
     lbl
 }
 
@@ -190,6 +458,37 @@ fn toggle(active: bool) -> gtk4::Switch {
     s.set_active(active);
     s.set_valign(gtk4::Align::Center);
     s
+}
+
+fn with_suffix(spin: &gtk4::SpinButton, suffix: &str) -> gtk4::Box {
+    let b = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    b.set_valign(gtk4::Align::Center);
+    b.append(spin);
+    let lbl = gtk4::Label::new(Some(suffix));
+    lbl.add_css_class("tm-suffix");
+    lbl.set_valign(gtk4::Align::Center);
+    b.append(&lbl);
+    b
+}
+
+fn rebuild_dots(container: &gtk4::Box, cycles: u32) {
+    while let Some(child) = container.first_child() {
+        container.remove(&child);
+    }
+    let n = cycles.clamp(1, 12) as usize;
+    for i in 0..n.min(8) {
+        let d = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        d.add_css_class("tm-dot");
+        if i == 0 {
+            d.add_css_class("tm-dot-on");
+        }
+        container.append(&d);
+    }
+    if n > 8 {
+        let more = gtk4::Label::new(Some(&format!("+{}", n - 8)));
+        more.add_css_class("tm-dots-more");
+        container.append(&more);
+    }
 }
 
 fn append_row(group: &gtk4::Box, label: &str, widget: &impl IsA<gtk4::Widget>, separator: bool) {

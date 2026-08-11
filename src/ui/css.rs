@@ -262,12 +262,20 @@ window.tm-root > contents {
 /* ═══ Settings ═══ */
 .tm-group-title {
   font-size: 9.5px; font-weight: 800; letter-spacing: 0.14em;
-  color: @tm_text_faint; margin: 14px 0 6px 2px;
+  color: @tm_text_faint; margin: 14px 0 2px 2px;
+}
+.tm-group-desc {
+  font-size: 10px; font-weight: 500; color: @tm_text_faint;
+  margin: 0 0 6px 2px;
 }
 .tm-group { background-color: @tm_row_bg; border: 1px solid @tm_row_border; border-radius: 14px; }
 .tm-setrow { padding: 10px 14px; }
 .tm-setrow-sep { border-bottom: 1px solid @tm_row_border; }
 .tm-setlabel { font-size: 12.5px; font-weight: 550; color: @tm_text; }
+.tm-suffix { font-size: 10px; font-weight: 700; color: @tm_text_faint; letter-spacing: 0.04em; }
+.tm-hint { font-size: 9.5px; font-weight: 500; color: @tm_text_faint; }
+.tm-opacity-val { font-size: 11px; font-weight: 700; color: @tm_text_dim; }
+.tm-dots-more { font-size: 10px; font-weight: 700; color: @tm_text_faint; margin-left: 2px; }
 
 spinbutton.tm-spin {
   background-color: @tm_control_bg; border: 1px solid @tm_control_border;
