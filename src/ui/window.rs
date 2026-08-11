@@ -262,19 +262,6 @@ pub fn build(app: &libadwaita::Application) {
             }
             revealer.set_reveal_child(expanding);
 
-            // Force full redraws during the animation to fix graphical glitches
-            // (e.g. elements cut in half) caused by GTK's dirty region tracking
-            // stumbling over the CSS width transition or async Wayland resizes.
-            let p_clone = pill_clone.clone();
-            let start = std::time::Instant::now();
-            p_clone.add_tick_callback(move |w, _| {
-                queue_draw_recursive(w.upcast_ref());
-                if start.elapsed().as_millis() > duration as u128 + 50 {
-                    gtk4::glib::ControlFlow::Break
-                } else {
-                    gtk4::glib::ControlFlow::Continue
-                }
-            });
         })
     };
     let pill_click = gtk4::GestureClick::new();
@@ -702,14 +689,5 @@ where
             .action(&action)
             .build();
         controller.add_shortcut(shortcut);
-    }
-}
-
-fn queue_draw_recursive(widget: &gtk4::Widget) {
-    widget.queue_draw();
-    let mut child = widget.first_child();
-    while let Some(c) = child {
-        queue_draw_recursive(&c);
-        child = c.next_sibling();
     }
 }
