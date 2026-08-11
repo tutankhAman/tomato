@@ -86,14 +86,15 @@ window.tm-root > contents {
   border: 1px solid @tm_border;
   border-radius: 9999px;
   padding: 6px 12px 6px 14px;
-  box-shadow: 0 4px 16px alpha(black, 0.45);
-  /* Width is now driven by a frame-clock tick in window.rs (high-framerate
-     lerp) so GTK reallocates children every frame. Keep only shadow on CSS. */
+  box-shadow: none;
+  /* Pill width eases with the dropdown — premium, high-framerate.
+     Collapsed is its natural width; expanded locks to the dropdown width. */
   min-width: 220px;
-  transition: box-shadow 220ms ease;
+  transition: min-width 300ms cubic-bezier(0.2, 0, 0, 1);
 }
 .tm-pill-open {
-  box-shadow: 0 2px 10px alpha(black, 0.30);
+  min-width: 316px;
+  box-shadow: none;
 }
 
 .tm-pill-time {
@@ -108,7 +109,7 @@ window.tm-root > contents {
   background-color: alpha(@tm_bg, __OPACITY__);
   border: 1px solid @tm_border;
   border-radius: 22px;
-  box-shadow: 0 24px 70px alpha(black, 0.55), 0 2px 12px alpha(black, 0.35);
+  box-shadow: none;
   /* Gap to pill is owned by the root box spacing so the revealer clip does
      not reveal a half-rounded top edge mid-animation. */
   opacity: 0.98;
