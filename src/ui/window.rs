@@ -92,7 +92,7 @@ pub fn build(app: &libadwaita::Application) {
     // blurred rectangle. Content alpha keeps corners fully transparent.
     crate::ui::reload_theme_with_opacity(initial_opacity);
 
-    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+    let root = gtk4::Overlay::new();
     window.set_child(Some(&root));
 
     let on_layer_shell = gtk4_layer_shell::is_supported();
@@ -144,7 +144,9 @@ pub fn build(app: &libadwaita::Application) {
 
     // Theme toggle and Close button moved to the pill for convenience
     let pill_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+    pill_actions.set_valign(gtk4::Align::Center);
     let theme_btn = gtk4::Button::new();
+    theme_btn.set_valign(gtk4::Align::Center);
     theme_btn.add_css_class("tm-iconbtn");
     let style_manager = libadwaita::StyleManager::default();
     theme_btn.set_icon_name(if style_manager.is_dark() {
@@ -166,6 +168,7 @@ pub fn build(app: &libadwaita::Application) {
     pill_actions.append(&theme_btn);
 
     let close_btn = gtk4::Button::from_icon_name("window-close-symbolic");
+    close_btn.set_valign(gtk4::Align::Center);
     close_btn.add_css_class("tm-iconbtn");
     close_btn.connect_clicked(gtk4::glib::clone!(
         #[weak]
@@ -192,7 +195,7 @@ pub fn build(app: &libadwaita::Application) {
         }
     });
     pill.append(&drag_handle);
-    root.append(&pill);
+    root.add_overlay(&pill);
 
     // Layout contract:
     // - The pill's width animation is CSS-driven (min-width) so the layer-shell
@@ -208,12 +211,12 @@ pub fn build(app: &libadwaita::Application) {
     root.set_halign(gtk4::Align::Fill);
     root.set_hexpand(true);
     root.set_valign(gtk4::Align::Start);
-    root.set_spacing(6);
     root.set_overflow(gtk4::Overflow::Visible);
     pill.set_halign(gtk4::Align::Center);
     pill.set_hexpand(false);
     pill.set_valign(gtk4::Align::Start);
     pill.set_overflow(gtk4::Overflow::Visible);
+    pill.set_size_request(-1, 38);
 
     let dropdown_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     dropdown_box.add_css_class("tm-dropdown");
@@ -230,79 +233,26 @@ pub fn build(app: &libadwaita::Application) {
     revealer.set_valign(gtk4::Align::Start);
     revealer.set_overflow(gtk4::Overflow::Hidden);
     revealer.set_child(Some(&dropdown_box));
-    root.append(&revealer);
+    revealer.set_margin_top(44);
+    root.set_child(Some(&revealer));
 
-    // Premium motion: pill width is frame-clock driven so every tick
-    // reallocates children — that's the "horizontal half-cut until hover"
-    // fix. CSS alone only interpolates the property; without a resize
-    // invalidation the children kept their old allocation for a frame and
-    // the trailing icons (theme/close/ring) clipped. This lerp runs at the
-    // display's refresh rate (same 15–16ms cadence) and stays in lockstep
-    // with the revealer by using the same easing and durations.
-    //
-    // 220 collapsed → 316 expanded (design values from css.rs). Only width
-    // moves; layer-shell surface stays locked at 340 so the compositor never
-    // renegotiates. Blur region is refreshed at clip end, not per-pixel.
-    pill.add_css_class("tm-pill");
-    // Keep a tick id so rapid taps can cancel a mid-flight lerp cleanly.
-    let width_tick: Rc<RefCell<Option<gtk4::TickCallbackId>>> = Rc::new(RefCell::new(None));
-    let animate_pill_width = {
-        let pill = pill.clone();
-        let width_tick = Rc::clone(&width_tick);
-        Rc::new(move |expanding: bool, dur_ms: u32| {
-            if let Some(id) = width_tick.borrow_mut().take() {
-                id.remove();
-            }
-            let (from_w, to_w) = if expanding { (220.0, 316.0) } else { (316.0, 220.0) };
-            let dur_ms = dur_ms as f64 / 1000.0;
-            let start: Rc<RefCell<Option<f64>>> = Rc::new(RefCell::new(None));
-            let id = pill.add_tick_callback(gtk4::glib::clone!(
-                #[weak] pill,
-                #[strong] start,
-                #[upgrade_or] gtk4::glib::ControlFlow::Break,
-                move |_, clock| {
-                    let t_us = clock.frame_time();
-                    let t0 = *start.borrow();
-                    let t0 = if let Some(t0) = t0 {
-                        t0
-                    } else {
-                        *start.borrow_mut() = Some(t_us as f64);
-                        t_us as f64
-                    };
-                    let elapsed = (t_us as f64 - t0) / 1_000_000.0;
-                    let u: f64 = (elapsed / dur_ms).clamp(0.0, 1.0);
-                    // ease-out cubic: 1 - (1-u)^3 — premium, no spring.
-                    let e: f64 = 1.0 - (1.0 - u).powf(3.0);
-                    let w = (from_w + (to_w - from_w) * e).round() as i32;
-                    pill.set_size_request(w, -1);
-                    pill.queue_resize();
-                    if u >= 1.0 {
-                        pill.set_size_request(to_w as i32, -1);
-                        pill.queue_resize();
-                        pill.queue_draw();
-                        return gtk4::glib::ControlFlow::Break;
-                    }
-                    gtk4::glib::ControlFlow::Continue
-                }
-            ));
-            *width_tick.borrow_mut() = Some(id);
-        })
-    };
-
+    // Bring back pill resize — but now as a CSS-driven min-width animation
+    // that stays in lockstep with the revealer (same easing/duration) and
+    // never breaks the pill's vertical layout. Debounce prevents double-
+    // toggling mid-flight which previously left the pill half-clipped.
     let toggle = {
         let revealer = revealer.clone();
         let pill_clone = pill.clone();
         let dropdown_box_clone = dropdown_box.clone();
-        let animate_pill_width = Rc::clone(&animate_pill_width);
         Rc::new(move || {
             if revealer.is_child_revealed() != revealer.reveals_child() {
                 return;
             }
             let expanding = !revealer.reveals_child();
-            // Keep pillar+dropdown timing in sync — shadow class drives the
-            // subtle elevation shift, opacity on the dropdown eases with clip.
-            let dur = if expanding { 300 } else { 240 };
-            revealer.set_transition_duration(dur);
+            // Keep JS/Css timing in sync: pill CSS is 320ms, revealer 300ms —
+            // close feels ~60ms snappier than open.
+            let duration = if expanding { 300 } else { 240 };
+            revealer.set_transition_duration(duration);
             if expanding {
                 pill_clone.add_css_class("tm-pill-open");
                 dropdown_box_clone.add_css_class("tm-dropdown-open");
@@ -310,24 +260,23 @@ pub fn build(app: &libadwaita::Application) {
                 pill_clone.remove_css_class("tm-pill-open");
                 dropdown_box_clone.remove_css_class("tm-dropdown-open");
             }
-            // Force immediate allocation/paint so the first frame isn't clipped.
-            pill_clone.queue_resize();
-            pill_clone.queue_draw();
-            animate_pill_width(expanding, dur);
             revealer.set_reveal_child(expanding);
+
+            // Force full redraws during the animation to fix graphical glitches
+            // (e.g. elements cut in half) caused by GTK's dirty region tracking
+            // stumbling over the CSS width transition or async Wayland resizes.
+            let p_clone = pill_clone.clone();
+            let start = std::time::Instant::now();
+            p_clone.add_tick_callback(move |w, _| {
+                queue_draw_recursive(w.upcast_ref());
+                if start.elapsed().as_millis() > duration as u128 + 50 {
+                    gtk4::glib::ControlFlow::Break
+                } else {
+                    gtk4::glib::ControlFlow::Continue
+                }
+            });
         })
     };
-    // Also catch the end state in case the tick desyncs by one frame (e.g.
-    // first tick arrives late on a busy compositor); final width is idempotent.
-    revealer.connect_child_revealed_notify(gtk4::glib::clone!(
-        #[weak] pill,
-        move |r| {
-            let target_w = if r.is_child_revealed() { 316 } else { 220 };
-            pill.set_size_request(target_w, -1);
-            pill.queue_resize();
-            pill.queue_draw();
-        }
-    ));
     let pill_click = gtk4::GestureClick::new();
     pill_click.set_button(1);
     pill_click.connect_pressed(gtk4::glib::clone!(
@@ -753,5 +702,14 @@ where
             .action(&action)
             .build();
         controller.add_shortcut(shortcut);
+    }
+}
+
+fn queue_draw_recursive(widget: &gtk4::Widget) {
+    widget.queue_draw();
+    let mut child = widget.first_child();
+    while let Some(c) = child {
+        queue_draw_recursive(&c);
+        child = c.next_sibling();
     }
 }
