@@ -3,6 +3,7 @@ pub mod css;
 pub mod settings_page;
 pub mod tasks_page;
 pub mod timer_page;
+pub mod tray;
 pub mod window;
 
 use std::cell::RefCell;

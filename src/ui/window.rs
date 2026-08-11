@@ -292,6 +292,26 @@ pub fn build(app: &libadwaita::Application) {
 
     crate::ui::blur::install(&window, pill.upcast_ref(), dropdown_box.upcast_ref());
 
+    let (tx, rx) = std::sync::mpsc::channel::<crate::ui::tray::TrayAction>();
+    let toggle_for_tray = toggle.clone();
+    let window_for_tray = window.clone();
+    gtk4::glib::timeout_add_local(
+        std::time::Duration::from_millis(100),
+        move || {
+            while let Ok(action) = rx.try_recv() {
+                match action {
+                    crate::ui::tray::TrayAction::Toggle => toggle_for_tray(),
+                    crate::ui::tray::TrayAction::Quit => {
+                        window_for_tray.close();
+                    }
+                }
+            }
+            gtk4::glib::ControlFlow::Continue
+        },
+    );
+
+    crate::ui::tray::spawn(tx);
+
     // Drag gesture for layer-shell live movement. Margins are derived from the
     // pointer's current widget coords and the window's current margin on every
     // event, throttled to one set_margin per compositor frame via a tick
