@@ -372,6 +372,28 @@ pub fn build(
         }
     );
 
+    let save_timer = {
+        let timer = Rc::clone(&timer);
+        Rc::new(move || {
+            let snap = timer.borrow().snapshot();
+            if let Err(e) = crate::timer::save_timer_snapshot(&snap) {
+                eprintln!("tomato: failed to save timer state: {e}");
+            }
+        })
+    };
+    // Throttled save while running: one flush per ~1s
+    let save_throttled = {
+        let save_timer = Rc::clone(&save_timer);
+        let last_save = Rc::new(RefCell::new(std::time::Instant::now()));
+        Rc::new(move || {
+            let now = std::time::Instant::now();
+            if now.duration_since(*last_save.borrow()) >= Duration::from_secs(1) {
+                *last_save.borrow_mut() = now;
+                save_timer();
+            }
+        })
+    };
+
     refresh();
 
     start_btn.connect_clicked(gtk4::glib::clone!(
@@ -379,8 +401,11 @@ pub fn build(
         timer,
         #[strong]
         refresh,
+        #[strong]
+        save_timer,
         move |_| {
             timer.borrow_mut().toggle();
+            save_timer();
             refresh();
         }
     ));
@@ -392,10 +417,13 @@ pub fn build(
         config,
         #[strong]
         refresh,
+        #[strong]
+        save_timer,
         move |_| {
             let cfg = config.borrow();
             timer.borrow_mut().reset(&cfg.timer);
             drop(cfg);
+            save_timer();
             refresh();
         }
     ));
@@ -407,10 +435,13 @@ pub fn build(
         config,
         #[strong]
         refresh,
+        #[strong]
+        save_timer,
         move |_| {
             let cfg = config.borrow();
             timer.borrow_mut().skip(&cfg.timer);
             drop(cfg);
+            save_timer();
             refresh();
         }
     ));
@@ -426,6 +457,10 @@ pub fn build(
             store,
             #[strong]
             refresh,
+            #[strong]
+            save_timer,
+            #[strong]
+            save_throttled,
             move || {
                 let status = timer.borrow().status();
                 if status == Status::Running {
@@ -451,8 +486,12 @@ pub fn build(
                             };
                             crate::notify::notify(summary, body);
                         }
+                        drop(cfg);
+                        save_timer();
+                    } else {
+                        drop(cfg);
+                        save_throttled();
                     }
-                    drop(cfg);
                 }
                 refresh();
                 gtk4::glib::ControlFlow::Continue
