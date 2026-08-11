@@ -85,6 +85,15 @@ pub fn build(
     chip.append(&chip_text);
     page.append(&chip);
 
+    // ── Active task hint (shown when no active task) ──────────────────────
+    let active_hint = gtk4::Label::new(Some("Star a task to focus · double-click a task title to rename"));
+    active_hint.add_css_class("tm-hint");
+    active_hint.add_css_class("tm-hint-center");
+    active_hint.set_halign(gtk4::Align::Center);
+    active_hint.set_wrap(true);
+    active_hint.set_margin_top(4);
+    page.append(&active_hint);
+
     // ── Controls ────────────────────────────────────────────────────────────
     let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
     controls.add_css_class("tm-ctl");
@@ -106,6 +115,13 @@ pub fn build(
     controls.append(&start_btn);
     controls.append(&skip_btn);
     page.append(&controls);
+
+    // ── Stats footer (minimal) ─────────────────────────────────────────────
+    let stats_lbl = gtk4::Label::new(Some("Today: —  ·  Week: —"));
+    stats_lbl.add_css_class("tm-stats");
+    stats_lbl.set_halign(gtk4::Align::Center);
+    stats_lbl.set_margin_top(14);
+    page.append(&stats_lbl);
 
     // ── Smooth ring animation state ─────────────────────────────────────────
     // Displayed progress eases toward the timer's real progress every frame.
@@ -253,6 +269,9 @@ pub fn build(
         }
     ));
 
+    // Preload stats for refresh closure (stats live on disk, refreshed each tick too)
+    let stats_store = Rc::new(RefCell::new(crate::stats::StatsStore::load()));
+
     // ── Refresh ─────────────────────────────────────────────────────────────
     let refresh = gtk4::glib::clone!(
         #[strong]
@@ -261,6 +280,8 @@ pub fn build(
         timer,
         #[strong]
         store,
+        #[strong]
+        stats_store,
         #[weak]
         phase_lbl,
         #[weak]
@@ -276,7 +297,11 @@ pub fn build(
         #[weak]
         chip_text,
         #[weak]
+        active_hint,
+        #[weak]
         start_btn,
+        #[weak]
+        stats_lbl,
         #[weak(rename_to = pill_ring_w)]
         pill_ring,
         #[weak(rename_to = pill_time_w)]
@@ -348,15 +373,32 @@ pub fn build(
                 dots.append(&d);
             }
 
-            // Active task chip
+            // Active task chip + hint
             let s = store.borrow();
             if let Some(active) = s.active_task() {
                 chip_text.set_label(&active.title);
                 chip.set_visible(true);
+                active_hint.set_visible(false);
             } else {
                 chip.set_visible(false);
+                // Show hint only when there are tasks but none starred, or hint when empty
+                let has_tasks = !s.items.is_empty();
+                active_hint.set_visible(true);
+                if has_tasks {
+                    active_hint.set_label("Star a task to focus · double-click a task title to rename");
+                } else {
+                    active_hint.set_label("Add a task to track pomodoros per item");
+                }
             }
             drop(s);
+
+            // Stats footer
+            {
+                let stats = stats_store.borrow();
+                let (td_s, td_m) = stats.today_totals();
+                let (wk_s, wk_m) = stats.week_totals();
+                stats_lbl.set_label(&format!("Today: {td_s} · {td_m} min  ·  Week: {wk_s} · {wk_m} min"));
+            }
 
             // Start / pause button
             if t.status() == Status::Running {
@@ -456,6 +498,8 @@ pub fn build(
             #[strong]
             store,
             #[strong]
+            stats_store,
+            #[strong]
             refresh,
             #[strong]
             save_timer,
@@ -465,6 +509,7 @@ pub fn build(
                 let status = timer.borrow().status();
                 if status == Status::Running {
                     let cfg = config.borrow();
+                    let focus_mins = cfg.timer.focus_minutes;
                     let new_phase = timer
                         .borrow_mut()
                         .tick(Duration::from_millis(250), &cfg.timer);
@@ -473,6 +518,12 @@ pub fn build(
                             && store.borrow_mut().increment_active_pomodoro()
                         {
                             let _ = store.borrow().save();
+                        }
+                        // Minimal stats: count completed focus sessions
+                        if phase == Phase::ShortBreak || phase == Phase::LongBreak {
+                            let mut stats = stats_store.borrow_mut();
+                            stats.record_focus(focus_mins);
+                            let _ = stats.save();
                         }
                         if cfg.notifications.enabled {
                             let (summary, body) = match phase {

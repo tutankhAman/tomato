@@ -131,6 +131,28 @@ impl TodoStore {
         self.items.iter().filter(|t| !t.done).count()
     }
 
+    pub fn rename(&mut self, id: &str, new_title: String) -> bool {
+        let trimmed = new_title.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        if let Some(todo) = self.items.iter_mut().find(|t| t.id == id) {
+            todo.title = trimmed.to_string();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn set_estimate(&mut self, id: &str, estimated: u32) -> bool {
+        if let Some(todo) = self.items.iter_mut().find(|t| t.id == id) {
+            todo.pomodoros_estimated = estimated;
+            true
+        } else {
+            false
+        }
+    }
+
     fn load_from(path: &Path) -> Self {
         let content = match fs::read_to_string(path) {
             Ok(c) => c,
@@ -236,5 +258,18 @@ mod tests {
 
         assert!(store.remove(&id));
         assert!(store.active_task().is_none());
+    }
+
+    #[test]
+    fn rename_and_estimate() {
+        let mut store = TodoStore::default();
+        let id = store.add("Original".to_string());
+        assert!(store.rename(&id, "  Renamed  ".to_string()));
+        assert_eq!(store.items[0].title, "Renamed");
+        assert!(!store.rename(&id, "   ".to_string()));
+        assert!(store.set_estimate(&id, 4));
+        assert_eq!(store.items[0].pomodoros_estimated, 4);
+        assert!(!store.set_estimate("nope", 2));
+        assert!(!store.rename("nope", "x".to_string()));
     }
 }

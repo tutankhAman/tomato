@@ -51,33 +51,40 @@ pub fn build(store: Rc<RefCell<TodoStore>>) -> gtk4::Widget {
     footer.append(&clear_btn);
     page.append(&footer);
 
+    type RebuildFn = dyn Fn();
     // ── Rebuild ─────────────────────────────────────────────────────────────
-    let update_ui: Rc<dyn Fn()> = Rc::new(gtk4::glib::clone!(
-        #[strong]
-        store,
-        #[weak]
-        list,
-        #[weak]
-        count,
-        move || {
-            while let Some(child) = list.first_child() {
-                list.remove(&child);
+    // Shared rebuild closure: interior cell avoids self-capture cycle during init.
+    #[allow(clippy::type_complexity)]
+    let update_ui: Rc<RebuildFn> = {
+        let store_c = Rc::clone(&store);
+        let list_c = list.clone();
+        let count_c = count.clone();
+        let cell: Rc<RefCell<Option<Rc<RebuildFn>>>> = Rc::new(RefCell::new(None));
+        let cell_clone = Rc::clone(&cell);
+        let mk: Rc<RebuildFn> = Rc::new(move || {
+            while let Some(child) = list_c.first_child() {
+                list_c.remove(&child);
             }
-            let s = store.borrow();
+            let s = store_c.borrow();
             let mut items = s.items.clone();
             items.sort_by_key(|t| t.done);
-
+            let cb = cell_clone.borrow().clone();
             for todo in &items {
                 let is_active = s.active_id.as_deref() == Some(&todo.id);
-                let row = make_row(todo, is_active, &store, &count);
-                list.append(&row);
+                let row = if let Some(ref f) = cb {
+                    make_row(todo, is_active, &store_c, &count_c, f)
+                } else {
+                    make_row_fallback(todo, is_active, &store_c, &count_c)
+                };
+                list_c.append(&row);
             }
-
             let active_count = s.remaining_count();
             let done_count = items.len() - active_count;
-            count.set_label(&format!("{active_count} active · {done_count} done"));
-        }
-    ));
+            count_c.set_label(&format!("{active_count} active · {done_count} done"));
+        });
+        *cell.borrow_mut() = Some(Rc::clone(&mk));
+        mk
+    };
 
     let add_task = gtk4::glib::clone!(
         #[weak]
@@ -135,7 +142,8 @@ fn make_row(
     todo: &Todo,
     is_active: bool,
     store: &Rc<RefCell<TodoStore>>,
-    count: &gtk4::Label,
+    _count: &gtk4::Label,
+    update_ui: &Rc<dyn Fn()>,
 ) -> gtk4::ListBoxRow {
     let row = gtk4::ListBoxRow::new();
     row.set_activatable(false);
@@ -153,7 +161,10 @@ fn make_row(
     check.set_active(todo.done);
     check.set_valign(gtk4::Align::Center);
 
-    // Title
+    // Title label + editable entry (stacked)
+    let title_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    title_box.set_hexpand(true);
+    title_box.set_valign(gtk4::Align::Center);
     let title = gtk4::Label::new(Some(&todo.title));
     title.set_hexpand(true);
     title.set_xalign(0.0);
@@ -163,19 +174,40 @@ fn make_row(
     if todo.done {
         title.add_css_class("tm-task-done");
     }
+    let edit = gtk4::Entry::new();
+    edit.add_css_class("tm-entry");
+    edit.add_css_class("tm-entry-inline");
+    edit.set_text(&todo.title);
+    edit.set_hexpand(true);
+    edit.set_visible(false);
+    title_box.append(&title);
+    title_box.append(&edit);
 
-    // Pomodoro count badge
-    let pomo_text = format!("🍅 {}", todo.pomodoros_done);
-    let pomo_badge = gtk4::Label::new(if todo.pomodoros_done > 0 {
-        Some(&pomo_text)
-    } else {
-        None
-    });
+    // Pomodoro badge: done/estimated or just done
+    let pomo_badge = gtk4::Label::new(None);
     pomo_badge.add_css_class("tm-count");
     if is_active {
         pomo_badge.add_css_class("tm-count-active");
     }
     pomo_badge.set_valign(gtk4::Align::Center);
+    update_pomo_label(&pomo_badge, todo.pomodoros_done, todo.pomodoros_estimated);
+
+    // Estimate stepper (- / +)
+    let est_minus = gtk4::Button::from_icon_name("list-remove-symbolic");
+    est_minus.add_css_class("tm-rowbtn");
+    est_minus.add_css_class("tm-rowbtn-sm");
+    est_minus.set_tooltip_text(Some("Decrease estimate"));
+    let est_plus = gtk4::Button::from_icon_name("list-add-symbolic");
+    est_plus.add_css_class("tm-rowbtn");
+    est_plus.add_css_class("tm-rowbtn-sm");
+    est_plus.set_tooltip_text(Some("Increase estimate"));
+    let est_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 1);
+    est_box.set_valign(gtk4::Align::Center);
+    est_box.append(&est_minus);
+    est_box.append(&est_plus);
+    if todo.pomodoros_estimated == 0 && todo.pomodoros_done == 0 {
+        est_box.set_opacity(0.45);
+    }
 
     // Focus target star
     let star_btn = gtk4::Button::from_icon_name(if is_active {
@@ -199,14 +231,34 @@ fn make_row(
     del_btn.set_tooltip_text(Some("Delete task"));
 
     row_box.append(&check);
-    row_box.append(&title);
+    row_box.append(&title_box);
     row_box.append(&pomo_badge);
+    row_box.append(&est_box);
     row_box.append(&star_btn);
     row_box.append(&del_btn);
 
     let id = todo.id.clone();
+    let initial_title = todo.title.clone();
 
-    check.connect_toggled(gtk4::glib::clone!(
+    // Double-click title to edit
+    let click = gtk4::GestureClick::new();
+    click.connect_pressed(gtk4::glib::clone!(
+        #[weak]
+        title,
+        #[weak]
+        edit,
+        move |_, n_press, _, _| {
+            if n_press == 2 {
+                title.set_visible(false);
+                edit.set_visible(true);
+                edit.grab_focus();
+                edit.select_region(0, -1);
+            }
+        }
+    ));
+    title_box.add_controller(click);
+
+    let commit_edit = gtk4::glib::clone!(
         #[strong]
         store,
         #[strong]
@@ -214,55 +266,168 @@ fn make_row(
         #[weak]
         title,
         #[weak]
-        count,
-        move |c| {
-            let done = c.is_active();
-            store.borrow_mut().toggle(&id);
-            if done {
-                title.add_css_class("tm-task-done");
-            } else {
-                title.remove_css_class("tm-task-done");
+        edit,
+        move || {
+            let new_text = edit.text().to_string();
+            if new_text.trim().is_empty() {
+                edit.set_text(title.label().as_ref());
+                title.set_visible(true);
+                edit.set_visible(false);
+                return;
             }
-            if let Err(e) = store.borrow().save() {
-                eprintln!("tomato: failed to save todo store: {e}");
+            if store.borrow_mut().rename(&id, new_text.clone()) {
+                if let Err(e) = store.borrow().save() {
+                    eprintln!("tomato: failed to save todo store: {e}");
+                }
+                title.set_label(new_text.trim());
             }
-            let s = store.borrow();
-            let active_count = s.remaining_count();
-            let done_count = s.items.len() - active_count;
-            count.set_label(&format!("{active_count} active · {done_count} done"));
+            title.set_visible(true);
+            edit.set_visible(false);
+        }
+    );
+    let cancel_edit = gtk4::glib::clone!(
+        #[weak]
+        title,
+        #[weak]
+        edit,
+        #[strong]
+        initial_title,
+        move || {
+            edit.set_text(&initial_title);
+            title.set_visible(true);
+            edit.set_visible(false);
+        }
+    );
+    edit.connect_activate(gtk4::glib::clone!(
+        #[strong]
+        commit_edit,
+        move |_| commit_edit()
+    ));
+    // Use key controller for Escape
+    let key = gtk4::EventControllerKey::new();
+    key.connect_key_pressed(gtk4::glib::clone!(
+        #[strong]
+        cancel_edit,
+        #[strong]
+        commit_edit,
+        move |_, keyval, _, _| {
+            if keyval == gtk4::gdk::Key::Escape {
+                cancel_edit();
+                return gtk4::glib::Propagation::Stop;
+            }
+            if keyval == gtk4::gdk::Key::Return || keyval == gtk4::gdk::Key::KP_Enter {
+                commit_edit();
+                return gtk4::glib::Propagation::Stop;
+            }
+            gtk4::glib::Propagation::Proceed
+        }
+    ));
+    edit.add_controller(key);
+    // Commit on focus out
+    let focus_ctrl = gtk4::EventControllerFocus::new();
+    focus_ctrl.connect_leave(gtk4::glib::clone!(
+        #[weak]
+        edit,
+        #[strong]
+        commit_edit,
+        move |_| {
+            if gtk4::prelude::WidgetExt::is_visible(&edit) {
+                commit_edit();
+            }
+        }
+    ));
+    edit.add_controller(focus_ctrl);
+
+    let id_clone = id.clone();
+    est_minus.connect_clicked(gtk4::glib::clone!(
+        #[strong]
+        store,
+        #[strong]
+        id_clone,
+        #[weak]
+        pomo_badge,
+        #[weak]
+        est_box,
+        move |_| {
+            let mut s = store.borrow_mut();
+            let cur = s.items.iter().find(|t| t.id == id_clone).map(|t| t.pomodoros_estimated).unwrap_or(0);
+            let next = cur.saturating_sub(1);
+            if s.set_estimate(&id_clone, next) {
+                let done = s.items.iter().find(|t| t.id == id_clone).map(|t| t.pomodoros_done).unwrap_or(0);
+                drop(s);
+                update_pomo_label(&pomo_badge, done, next);
+                if next == 0 && done == 0 { est_box.set_opacity(0.45); } else { est_box.set_opacity(1.0); }
+                if let Err(e) = store.borrow().save() {
+                    eprintln!("tomato: failed to save todo store: {e}");
+                }
+            }
+        }
+    ));
+    let id_clone2 = id.clone();
+    est_plus.connect_clicked(gtk4::glib::clone!(
+        #[strong]
+        store,
+        #[strong]
+        id_clone2,
+        #[weak]
+        pomo_badge,
+        #[weak]
+        est_box,
+        move |_| {
+            let mut s = store.borrow_mut();
+            let cur = s.items.iter().find(|t| t.id == id_clone2).map(|t| t.pomodoros_estimated).unwrap_or(0);
+            let next = (cur + 1).min(20);
+            if s.set_estimate(&id_clone2, next) {
+                let done = s.items.iter().find(|t| t.id == id_clone2).map(|t| t.pomodoros_done).unwrap_or(0);
+                drop(s);
+                update_pomo_label(&pomo_badge, done, next);
+                est_box.set_opacity(1.0);
+                if let Err(e) = store.borrow().save() {
+                    eprintln!("tomato: failed to save todo store: {e}");
+                }
+            }
         }
     ));
 
+    // Capture update_ui for delete/star toggles
+    let update_ui_clone = Rc::clone(update_ui);
+
+    check.connect_toggled(gtk4::glib::clone!(
+        #[strong]
+        store,
+        #[strong]
+        id,
+        #[strong]
+        update_ui_clone,
+        move |c| {
+            let _done = c.is_active();
+            store.borrow_mut().toggle(&id);
+            if let Err(e) = store.borrow().save() {
+                eprintln!("tomato: failed to save todo store: {e}");
+            }
+            update_ui_clone();
+        }
+    ));
+
+    let update_ui_clone2 = Rc::clone(update_ui);
     star_btn.connect_clicked(gtk4::glib::clone!(
         #[strong]
         store,
         #[strong]
         id,
-        #[weak]
-        row_box,
-        #[weak]
-        star_btn,
+        #[strong]
+        update_ui_clone2,
         move |_| {
             let current = store.borrow().active_id.clone();
-            let now_active = if current.as_deref() == Some(&id) {
+            if current.as_deref() == Some(&id) {
                 store.borrow_mut().set_active(None);
-                false
             } else {
                 store.borrow_mut().set_active(Some(id.clone()));
-                true
-            };
+            }
             if let Err(e) = store.borrow().save() {
                 eprintln!("tomato: failed to save todo store: {e}");
             }
-            if now_active {
-                row_box.add_css_class("tm-row-active");
-                star_btn.add_css_class("tm-rowbtn-on");
-                star_btn.set_icon_name("starred-symbolic");
-            } else {
-                row_box.remove_css_class("tm-row-active");
-                star_btn.remove_css_class("tm-rowbtn-on");
-                star_btn.set_icon_name("non-starred-symbolic");
-            }
+            update_ui_clone2();
         }
     ));
 
@@ -271,24 +436,40 @@ fn make_row(
         store,
         #[strong]
         id,
-        #[weak]
-        row,
-        #[weak]
-        count,
+        #[strong]
+        update_ui,
         move |_| {
             store.borrow_mut().remove(&id);
             if let Err(e) = store.borrow().save() {
                 eprintln!("tomato: failed to save todo store: {e}");
             }
-            if let Some(list) = row.parent().and_then(|p| p.downcast::<gtk4::ListBox>().ok()) {
-                list.remove(&row);
-            }
-            let s = store.borrow();
-            let active_count = s.remaining_count();
-            let done_count = s.items.len() - active_count;
-            count.set_label(&format!("{active_count} active · {done_count} done"));
+            update_ui();
         }
     ));
 
     row
+}
+
+fn update_pomo_label(label: &gtk4::Label, done: u32, estimated: u32) {
+    if done == 0 && estimated == 0 {
+        label.set_label("");
+        label.set_visible(false);
+        return;
+    }
+    label.set_visible(true);
+    if estimated > 0 {
+        label.set_label(&format!("🍅 {done}/{estimated}"));
+    } else {
+        label.set_label(&format!("🍅 {done}"));
+    }
+}
+
+fn make_row_fallback(
+    todo: &Todo,
+    is_active: bool,
+    store: &Rc<RefCell<TodoStore>>,
+    _count: &gtk4::Label,
+) -> gtk4::ListBoxRow {
+    let noop: Rc<dyn Fn()> = Rc::new(|| {});
+    make_row(todo, is_active, store, _count, &noop)
 }

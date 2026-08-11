@@ -252,6 +252,10 @@ window.tm-root > contents {
 .tm-rowbtn-on { color: @tm_caret; }
 
 .tm-footer { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; color: @tm_text_faint; }
+.tm-stats { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; color: @tm_text_dim; opacity: 0.9; }
+.tm-hint-center { font-size: 9.5px; letter-spacing: 0.02em; }
+.tm-entry-inline { min-height: 28px; font-size: 12px; }
+.tm-rowbtn-sm { min-width: 22px; min-height: 22px; }
 .tm-link {
   font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
   color: @tm_text_dim; background: transparent; border: none; box-shadow: none;
