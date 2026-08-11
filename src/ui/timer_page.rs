@@ -34,12 +34,18 @@ pub fn build(
     phase_lbl.set_margin_top(4);
     page.append(&phase_lbl);
 
+    // Spacer above the ring — with the matching spacer below it this
+    // vertically centres the ring cluster in the available page height
+    // (between the phase label and the bottom controls).
+    let top_spring = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    top_spring.set_vexpand(true);
+    page.append(&top_spring);
+
     // ── Ring ────────────────────────────────────────────────────────────────
     let overlay = gtk4::Overlay::new();
     overlay.set_halign(gtk4::Align::Center);
     overlay.set_valign(gtk4::Align::Center);
     overlay.set_size_request(RING, RING);
-    overlay.set_margin_top(20);
 
     let ring = gtk4::DrawingArea::new();
     ring.set_size_request(RING, RING);
@@ -87,10 +93,11 @@ pub fn build(
     chip.append(&chip_text);
     page.append(&chip);
 
-    // Push controls to the bottom so the page fills the full dropdown height.
-    let spring = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    spring.set_vexpand(true);
-    page.append(&spring);
+    // Matching spacer below the ring cluster — centres the ring.
+    // Controls remain pinned to the bottom edge below this.
+    let bottom_spring = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    bottom_spring.set_vexpand(true);
+    page.append(&bottom_spring);
 
     // ── Controls ────────────────────────────────────────────────────────────
     let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);

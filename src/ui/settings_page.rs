@@ -81,17 +81,8 @@ where
     let long_box = with_suffix(&long_spin, "min");
     append_row(&timer_group, "Long break", &long_box, true);
 
-    // Cycles row with live dots preview
     let cycles_spin = spin(1.0, 12.0, cfg.timer.cycles_before_long_break as f64);
-    let dots_preview = gtk4::Box::new(gtk4::Orientation::Horizontal, 5);
-    dots_preview.add_css_class("tm-dots");
-    dots_preview.set_valign(gtk4::Align::Center);
-    rebuild_dots(&dots_preview, cfg.timer.cycles_before_long_break);
-    let cycles_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    cycles_box.append(&cycles_spin);
-    cycles_box.append(&dots_preview);
-    cycles_box.set_valign(gtk4::Align::Center);
-    append_row(&timer_group, "Sessions before long break", &cycles_box, false);
+    append_row(&timer_group, "Sessions before long break", &cycles_spin, false);
 
     page.append(&timer_group);
 
@@ -375,20 +366,11 @@ where
                 guard,
                 #[strong]
                 sync_preset,
-                #[weak]
-                dots_preview,
                 move |s| {
                     if *guard.borrow() {
-                        // Still update dots if this is the cycles spin
-                        if stringify!($field) == "cycles_before_long_break" {
-                            rebuild_dots(&dots_preview, s.value() as u32);
-                        }
                         return;
                     }
                     config.borrow_mut().$sub.$field = s.value() as u32;
-                    if stringify!($field) == "cycles_before_long_break" {
-                        rebuild_dots(&dots_preview, s.value() as u32);
-                    }
                     sync_preset();
                     save_config();
                 }
@@ -499,26 +481,6 @@ fn with_suffix(spin: &gtk4::SpinButton, suffix: &str) -> gtk4::Box {
     lbl.set_valign(gtk4::Align::Center);
     b.append(&lbl);
     b
-}
-
-fn rebuild_dots(container: &gtk4::Box, cycles: u32) {
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
-    }
-    let n = cycles.clamp(1, 12) as usize;
-    for i in 0..n.min(8) {
-        let d = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-        d.add_css_class("tm-dot");
-        if i == 0 {
-            d.add_css_class("tm-dot-on");
-        }
-        container.append(&d);
-    }
-    if n > 8 {
-        let more = gtk4::Label::new(Some(&format!("+{}", n - 8)));
-        more.add_css_class("tm-dots-more");
-        container.append(&more);
-    }
 }
 
 fn append_row(group: &gtk4::Box, label: &str, widget: &impl IsA<gtk4::Widget>, separator: bool) {

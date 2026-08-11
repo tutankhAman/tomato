@@ -314,13 +314,13 @@ window.tm-root > contents {
 spinbutton.tm-spin {
   background-color: @tm_control_bg; border: 1px solid @tm_control_border;
   border-radius: 8px; color: @tm_text; font-size: 12px;
-  min-height: 28px;
-  padding: 4px 2px;
+  min-height: 32px;
+  padding: 0 2px;
   box-shadow: none;
 }
-spinbutton.tm-spin button { background-color: transparent; border: none; color: @tm_text_dim; box-shadow: none; }
+spinbutton.tm-spin button { background-color: transparent; border: none; color: @tm_text_dim; box-shadow: none; min-height: 28px; }
 spinbutton.tm-spin button:hover { color: @tm_text; }
-spinbutton.tm-spin text { background-color: transparent; color: @tm_text; padding: 2px 4px; }
+spinbutton.tm-spin text { background-color: transparent; color: @tm_text; padding: 6px 8px; }
 
 dropdown.tm-spin button {
   background-color: @tm_control_bg; border: 1px solid @tm_control_border;

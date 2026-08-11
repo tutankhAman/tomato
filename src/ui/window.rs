@@ -257,12 +257,35 @@ pub fn build(app: &libadwaita::Application) {
     };
     let pill_click = gtk4::GestureClick::new();
     pill_click.set_button(1);
+    pill_click.set_propagation_phase(gtk4::PropagationPhase::Bubble);
     pill_click.connect_pressed(gtk4::glib::clone!(
         #[strong] toggle,
-        move |_, n_press, _, _| {
-            if n_press == 1 {
-                toggle();
+        #[weak] close_btn,
+        #[weak] drag_handle,
+        #[weak] pill,
+        move |_, n_press, x, y| {
+            if n_press != 1 {
+                return;
             }
+            // Clicks on the close button or drag handle must not toggle the dropdown.
+            if let Some(target) = pill.pick(x, y, gtk4::PickFlags::DEFAULT) {
+                let is_descendant = |ancestor: &gtk4::Widget| {
+                    let mut cur = Some(target.clone());
+                    while let Some(w) = cur {
+                        if &w == ancestor {
+                            return true;
+                        }
+                        cur = w.parent();
+                    }
+                    false
+                };
+                if is_descendant(close_btn.upcast_ref())
+                    || is_descendant(drag_handle.upcast_ref())
+                {
+                    return;
+                }
+            }
+            toggle();
         }
     ));
     pill.add_controller(pill_click);
