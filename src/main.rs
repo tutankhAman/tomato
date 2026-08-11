@@ -9,6 +9,7 @@ fn main() {
 
     app.connect_startup(|_| {
         libadwaita::StyleManager::default().set_color_scheme(libadwaita::ColorScheme::ForceDark);
+        gtk4::Window::set_default_icon_name("dev.aamn.tomato");
         // Keep startup path in sync with the saved window opacity; the
         // actual opacity is re-applied in window::build once config is loaded
         // so no extra arg is needed here.

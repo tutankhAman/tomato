@@ -33,10 +33,10 @@ const DARK_DEFS: &str = r#"
 @define-color tm_check_border #ffffff2e;
 @define-color tm_scrollbar #ffffff1f;
 @define-color tm_scrollbar_hover #ffffff33;
-@define-color tm_glass_border #ffffff26;
-@define-color tm_3d_inset_light #ffffff48;
-@define-color tm_3d_inset_dark #000000b0;
-@define-color tm_3d_glow #ffffff0c;
+@define-color tm_glass_border #ffffff1c;
+@define-color tm_3d_inset_light #ffffff25;
+@define-color tm_3d_inset_dark #00000045;
+@define-color tm_3d_glow #ffffff06;
 "#;
 
 const LIGHT_DEFS: &str = r#"
@@ -94,9 +94,8 @@ window.tm-root > contents {
   border: 1px solid @tm_glass_border;
   border-radius: 9999px;
   padding: 5px 8px 5px 12px;
-  box-shadow: inset 0 1.5px 1px 0 @tm_3d_inset_light,
-              inset 0 -2.5px 5px 0 @tm_3d_inset_dark,
-              inset 0 0 12px 0 @tm_3d_glow;
+  box-shadow: inset 0 1px 0.5px 0 @tm_3d_inset_light,
+              inset 0 -1.5px 3px 0 @tm_3d_inset_dark;
   /* Pill width eases with the dropdown — premium, high-framerate.
      Collapsed is its natural width; expanded locks to the dropdown width. */
   min-width: 192px;
@@ -128,9 +127,8 @@ window.tm-root > contents {
   background-color: alpha(@tm_bg, __OPACITY__);
   border: 1px solid @tm_glass_border;
   border-radius: 22px;
-  box-shadow: inset 0 1.5px 1.5px 0 @tm_3d_inset_light,
-              inset 0 -3px 7px 0 @tm_3d_inset_dark,
-              inset 0 0 16px 0 @tm_3d_glow;
+  box-shadow: inset 0 1px 1px 0 @tm_3d_inset_light,
+              inset 0 -2px 5px 0 @tm_3d_inset_dark;
   /* Gap to pill is owned by the root box spacing so the revealer clip does
      not reveal a half-rounded top edge mid-animation. */
   opacity: 0.98;

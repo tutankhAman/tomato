@@ -8,9 +8,19 @@ echo "📦 Installing binary to ~/.local/bin/tomato..."
 mkdir -p "$HOME/.local/bin"
 cp target/release/tomato "$HOME/.local/bin/tomato"
 
-echo "🎨 Installing icon..."
+echo "🎨 Installing icons..."
 mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
+mkdir -p "$HOME/.local/share/pixmaps"
 cp data/dev.aamn.tomato.svg "$HOME/.local/share/icons/hicolor/scalable/apps/dev.aamn.tomato.svg"
+cp data/dev.aamn.tomato.svg "$HOME/.local/share/pixmaps/dev.aamn.tomato.svg"
+
+if command -v rsvg-convert >/dev/null 2>&1; then
+    for sz in 16 32 48 64 128 256 512; do
+        mkdir -p "$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps"
+        rsvg-convert -w "$sz" -h "$sz" data/dev.aamn.tomato.svg -o "$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps/dev.aamn.tomato.png"
+    done
+    cp "$HOME/.local/share/icons/hicolor/128x128/apps/dev.aamn.tomato.png" "$HOME/.local/share/pixmaps/dev.aamn.tomato.png"
+fi
 
 echo "🖥️ Installing desktop entry..."
 mkdir -p "$HOME/.local/share/applications"
