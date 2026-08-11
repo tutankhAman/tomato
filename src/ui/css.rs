@@ -87,16 +87,15 @@ window.tm-root > contents {
   border-radius: 9999px;
   padding: 6px 12px 6px 14px;
   box-shadow: 0 4px 16px alpha(black, 0.45);
-  /* Width is driven at 60fps by a tick callback (see window.rs) rather
-     than a CSS min-width transition — CSS transitions on layout properties
-     skip child re-measure on some GTK frames, which manifested as
-     "ring/theme/close cut off until hover". Manual tick forces
-     queue_resize + queue_draw every frame, so it stays high-framerate
-     and never leaves a half-painted pill. */
+  /* Width is animated explicitly via set_size_request in window.rs — not
+     via a CSS transition. CSS transitions on layout properties (min-width)
+     interpolate the background but skip child re-measure on intermediate
+     frames, which is why the ring/theme/close looked cut off until hover
+     forced a re-measure. Manual tick + queue_resize keeps it correct. */
   min-width: 220px;
+  transition: box-shadow 220ms ease;
 }
 .tm-pill-open {
-  /* Open shadow is set inline during the width tick to stay in sync. */
   box-shadow: 0 2px 10px alpha(black, 0.30);
 }
 
