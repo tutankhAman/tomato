@@ -33,6 +33,13 @@ const DARK_DEFS: &str = r#"
 @define-color tm_check_border #ffffff2e;
 @define-color tm_scrollbar #ffffff1f;
 @define-color tm_scrollbar_hover #ffffff33;
+@define-color tm_3d_top #ffffff75;
+@define-color tm_3d_left #ffffff35;
+@define-color tm_3d_right #ffffff18;
+@define-color tm_3d_bottom #000000a0;
+@define-color tm_3d_inset_light #ffffff48;
+@define-color tm_3d_inset_dark #00000080;
+@define-color tm_3d_glow #ffffff0c;
 "#;
 
 const LIGHT_DEFS: &str = r#"
@@ -67,6 +74,13 @@ const LIGHT_DEFS: &str = r#"
 @define-color tm_check_border #00000038;
 @define-color tm_scrollbar #0000002b;
 @define-color tm_scrollbar_hover #00000040;
+@define-color tm_3d_top #ffffff;
+@define-color tm_3d_left #ffffffc0;
+@define-color tm_3d_right #0000001a;
+@define-color tm_3d_bottom #00000038;
+@define-color tm_3d_inset_light #ffffffee;
+@define-color tm_3d_inset_dark #00000024;
+@define-color tm_3d_glow #ffffff40;
 "#;
 
 const TEMPLATE: &str = r#"
@@ -83,10 +97,17 @@ window.tm-root > contents {
 
 .tm-pill {
   background-color: alpha(@tm_bg, __OPACITY__);
-  border: 1px solid @tm_border;
+  border-style: solid;
+  border-width: 1px;
+  border-top-color: @tm_3d_top;
+  border-left-color: @tm_3d_left;
+  border-right-color: @tm_3d_right;
+  border-bottom-color: @tm_3d_bottom;
   border-radius: 9999px;
   padding: 5px 8px 5px 12px;
-  box-shadow: none;
+  box-shadow: inset 0 1.5px 1px 0 @tm_3d_inset_light,
+              inset 0 -2.5px 5px 0 @tm_3d_inset_dark,
+              inset 0 0 12px 0 @tm_3d_glow;
   /* Pill width eases with the dropdown — premium, high-framerate.
      Collapsed is its natural width; expanded locks to the dropdown width. */
   min-width: 192px;
@@ -94,7 +115,6 @@ window.tm-root > contents {
 }
 .tm-pill-open {
   min-width: 256px;
-  box-shadow: none;
 }
 
 .tm-pill-cycle {
@@ -117,9 +137,16 @@ window.tm-root > contents {
 
 .tm-dropdown {
   background-color: alpha(@tm_bg, __OPACITY__);
-  border: 1px solid @tm_border;
+  border-style: solid;
+  border-width: 1px;
+  border-top-color: @tm_3d_top;
+  border-left-color: @tm_3d_left;
+  border-right-color: @tm_3d_right;
+  border-bottom-color: @tm_3d_bottom;
   border-radius: 22px;
-  box-shadow: none;
+  box-shadow: inset 0 1.5px 1.5px 0 @tm_3d_inset_light,
+              inset 0 -3px 7px 0 @tm_3d_inset_dark,
+              inset 0 0 16px 0 @tm_3d_glow;
   /* Gap to pill is owned by the root box spacing so the revealer clip does
      not reveal a half-rounded top edge mid-animation. */
   opacity: 0.98;
