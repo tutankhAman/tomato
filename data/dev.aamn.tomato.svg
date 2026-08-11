@@ -1,34 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <!-- Dark Monochrome Squircle Container -->
+  <!-- Dark Container for Libadwaita / GTK Theme Compatibility -->
   <rect x="8" y="8" width="112" height="112" rx="28" fill="#0e0f14"/>
   <rect x="8" y="8" width="112" height="112" rx="28" fill="none" stroke="#ffffff" stroke-opacity="0.15" stroke-width="1.2"/>
 
-  <!-- 2D Monochrome Tomato Glyph -->
-  <g fill="#f4f5f7">
-    <!-- Tomato Body -->
-    <path d="M 64 102 
-             C 40 102, 22 87, 22 65 
-             C 22 48, 33 37, 48 34 
-             C 54 38, 59 40, 64 40 
-             C 69 40, 74 38, 80 34 
-             C 95 37, 106 48, 106 65 
-             C 106 87, 88 102, 64 102 Z"/>
-
-    <!-- Calyx & Stem -->
-    <path d="M 64 18 
-             C 64 18, 67 25, 64 34 
-             C 61 25, 64 18, 64 18 Z"/>
-    <path d="M 64 33 
-             C 57 27, 46 25, 40 28 
-             C 47 33, 55 35, 64 33 Z"/>
-    <path d="M 64 33 
-             C 71 27, 82 25, 88 28 
-             C 81 33, 73 35, 64 33 Z"/>
-    <path d="M 64 35 
-             C 58 37, 49 43, 47 50 
-             C 53 46, 60 41, 64 35 Z"/>
-    <path d="M 64 35 
-             C 70 37, 79 43, 81 50 
-             C 75 46, 68 41, 64 35 Z"/>
-  </g>
+  <!-- Pixel Art Tomato Glyph -->
+  <path d="M67,25h6v6h-6z M61,31h6v6h-6z M49,37h6v6h-6z M61,37h6v6h-6z M73,37h6v6h-6z M37,43h6v6h-6z M55,43h6v6h-6z M61,43h6v6h-6z M67,43h6v6h-6z M85,43h6v6h-6z M91,43h6v6h-6z M31,49h6v6h-6z M49,49h6v6h-6z M55,49h6v6h-6z M67,49h6v6h-6z M73,49h6v6h-6z M97,49h6v6h-6z M31,55h6v6h-6z M49,55h6v6h-6z M73,55h6v6h-6z M97,55h6v6h-6z M25,61h6v6h-6z M103,61h6v6h-6z M25,67h6v6h-6z M103,67h6v6h-6z M31,73h6v6h-6z M97,73h6v6h-6z M31,79h6v6h-6z M97,79h6v6h-6z M37,85h6v6h-6z M91,85h6v6h-6z M37,91h6v6h-6z M91,91h6v6h-6z M43,97h6v6h-6z M49,97h6v6h-6z M55,97h6v6h-6z M73,97h6v6h-6z M79,97h6v6h-6z M85,97h6v6h-6z M61,103h6v6h-6z M67,103h6v6h-6z" fill="#f4f5f7"/>
 </svg>
