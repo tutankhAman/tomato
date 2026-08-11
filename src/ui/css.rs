@@ -112,11 +112,14 @@ window.tm-root > contents {
   box-shadow: none;
   /* Gap to pill is owned by the root box spacing so the revealer clip does
      not reveal a half-rounded top edge mid-animation. */
-  opacity: 0.98;
-  transition: opacity 220ms cubic-bezier(0.2, 0, 0, 1);
+  opacity: 0;
+  transform: scale(0.92) translateY(-10px);
+  transition: opacity 180ms ease,
+              transform 350ms cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 .tm-dropdown-open {
   opacity: 1;
+  transform: scale(1) translateY(0);
 }
 
 /* ═══ Header ═══ */
