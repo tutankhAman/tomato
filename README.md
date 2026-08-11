@@ -40,6 +40,17 @@ config
 every field has a default, so a partial file is fine. open settings in the
 panel to change values live, or hand-edit the file.
 
+keyboard shortcuts
+
+    space          start / pause the timer
+    ctrl+q         close
+    esc            close
+    ctrl+1         timer tab
+    ctrl+2         tasks tab
+    ctrl+3         settings tab
+    ctrl+r         reset the timer
+    ctrl+s         skip the current phase
+
 license
 
 mit
