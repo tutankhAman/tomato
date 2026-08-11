@@ -87,11 +87,8 @@ window.tm-root > contents {
   border-radius: 9999px;
   padding: 6px 12px 6px 14px;
   box-shadow: 0 4px 16px alpha(black, 0.45);
-  /* Width is animated explicitly via set_size_request in window.rs — not
-     via a CSS transition. CSS transitions on layout properties (min-width)
-     interpolate the background but skip child re-measure on intermediate
-     frames, which is why the ring/theme/close looked cut off until hover
-     forced a re-measure. Manual tick + queue_resize keeps it correct. */
+  /* Width is now driven by a frame-clock tick in window.rs (high-framerate
+     lerp) so GTK reallocates children every frame. Keep only shadow on CSS. */
   min-width: 220px;
   transition: box-shadow 220ms ease;
 }
