@@ -229,6 +229,8 @@ pub fn build(app: &libadwaita::Application) {
     revealer.set_child(Some(&dropdown_box));
     root.append(&revealer);
 
+    crate::ui::blur::install(&window, pill.upcast_ref(), dropdown_box.upcast_ref());
+
     // Drag gesture for layer-shell live movement. Margins are derived from the
     // pointer's current widget coords and the window's current margin on every
     // event, throttled to one set_margin per compositor frame via a tick

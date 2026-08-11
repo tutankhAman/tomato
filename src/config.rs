@@ -27,9 +27,6 @@ fn default_auto_start_focus() -> bool {
 fn default_notifications_enabled() -> bool {
     true
 }
-fn default_notifications_sound() -> bool {
-    true
-}
 
 fn default_anchor() -> String {
     "top-right".to_string()
@@ -42,9 +39,6 @@ fn default_opacity() -> f64 {
 }
 fn default_always_on_top() -> bool {
     true
-}
-fn default_compact() -> bool {
-    false
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -67,8 +61,6 @@ pub struct TimerConfig {
 pub struct NotificationConfig {
     #[serde(default = "default_notifications_enabled")]
     pub enabled: bool,
-    #[serde(default = "default_notifications_sound")]
-    pub sound: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -83,8 +75,6 @@ pub struct WindowConfig {
     pub opacity: f64,
     #[serde(default = "default_always_on_top")]
     pub always_on_top: bool,
-    #[serde(default = "default_compact")]
-    pub compact: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -114,7 +104,6 @@ impl Default for NotificationConfig {
     fn default() -> Self {
         Self {
             enabled: default_notifications_enabled(),
-            sound: default_notifications_sound(),
         }
     }
 }
@@ -127,7 +116,6 @@ impl Default for WindowConfig {
             margin_y: default_margin(),
             opacity: default_opacity(),
             always_on_top: default_always_on_top(),
-            compact: default_compact(),
         }
     }
 }
@@ -195,12 +183,18 @@ mod tests {
         assert!(cfg.timer.auto_start_breaks);
         assert!(!cfg.timer.auto_start_focus);
         assert!(cfg.notifications.enabled);
-        assert!(cfg.notifications.sound);
         assert_eq!(cfg.window.anchor, "top-right");
         assert_eq!(cfg.window.margin_x, 16);
         assert_eq!(cfg.window.margin_y, 16);
         assert_eq!(cfg.window.opacity, 0.97);
         assert!(cfg.window.always_on_top);
-        assert!(!cfg.window.compact);
+    }
+
+    #[test]
+    fn legacy_sound_and_compact_keys_are_ignored() {
+        let s = "[notifications]\nenabled = false\nsound = true\n[window]\nanchor = \"center\"\ncompact = true\n";
+        let cfg: Config = toml::from_str(s).unwrap();
+        assert!(!cfg.notifications.enabled);
+        assert_eq!(cfg.window.anchor, "center");
     }
 }

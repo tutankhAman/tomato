@@ -1,3 +1,4 @@
+pub mod blur;
 pub mod css;
 pub mod settings_page;
 pub mod tasks_page;

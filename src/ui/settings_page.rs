@@ -58,9 +58,6 @@ where
 
     let notify_switch = toggle(cfg.notifications.enabled);
     append_row(&notif_group, "Desktop notifications", &notify_switch, false);
-
-    let sound_switch = toggle(cfg.notifications.sound);
-    append_row(&notif_group, "Sound alerts", &sound_switch, true);
     page.append(&notif_group);
 
     // ── Window ──────────────────────────────────────────────────────────────
@@ -88,9 +85,6 @@ where
 
     let aot_switch = toggle(cfg.window.always_on_top);
     append_row(&win_group, "Always on top", &aot_switch, true);
-
-    let compact_switch = toggle(cfg.window.compact);
-    append_row(&win_group, "Compact mode", &compact_switch, true);
     page.append(&win_group);
 
     drop(cfg);
@@ -146,9 +140,7 @@ where
     bind_switch!(auto_break_switch, auto_start_breaks, timer);
     bind_switch!(auto_focus_switch, auto_start_focus, timer);
     bind_switch!(notify_switch, enabled, notifications);
-    bind_switch!(sound_switch, sound, notifications);
     bind_switch!(aot_switch, always_on_top, window);
-    bind_switch!(compact_switch, compact, window);
 
     anchor_combo.connect_selected_notify(gtk4::glib::clone!(
         #[strong]
