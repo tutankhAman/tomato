@@ -6,7 +6,7 @@ cargo build --release
 
 echo "📦 Installing binary to ~/.local/bin/tomato..."
 mkdir -p "$HOME/.local/bin"
-cp target/release/tomato "$HOME/.local/bin/tomato"
+install -m 755 target/release/tomato "$HOME/.local/bin/tomato"
 
 echo "🎨 Installing icons..."
 mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
