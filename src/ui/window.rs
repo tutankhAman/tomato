@@ -194,40 +194,67 @@ pub fn build(app: &libadwaita::Application) {
     pill.append(&drag_handle);
     root.append(&pill);
 
-    let revealer = gtk4::Revealer::new();
-    revealer.set_transition_type(gtk4::RevealerTransitionType::SlideDown);
-    revealer.set_transition_duration(250);
-    // Revealed by default? Let's say false, so it's a pill by default.
-    revealer.set_reveal_child(false);
-    revealer.set_visible(false); // Hide completely so it doesn't force window width
-
-    revealer.connect_child_revealed_notify(|r| {
-        if !r.is_child_revealed() {
-            r.set_visible(false);
-        }
-    });
-
-    let click = gtk4::GestureClick::new();
-    click.connect_pressed(gtk4::glib::clone!(
-        #[weak] revealer,
-        move |_, n_press, _, _| {
-            if n_press == 1 {
-                if revealer.reveals_child() {
-                    revealer.set_reveal_child(false);
-                } else {
-                    revealer.set_visible(true);
-                    revealer.set_reveal_child(true);
-                }
-            }
-        }
-    ));
-    pill_ring.add_controller(click);
+    // Width contract: the layer-shell window is width-locked to 340 so the pill
+    // never snaps wide/narrow when the dropdown slides. Pill stays centered at
+    // its natural width; only height animates. This is the #1 jank fix — without
+    // it GTK resizes width every frame and the pill stretches mid-animation.
+    window.set_size_request(340, -1);
+    root.set_halign(gtk4::Align::Fill);
+    root.set_hexpand(true);
+    pill.set_halign(gtk4::Align::Center);
+    pill.set_hexpand(false);
+    // Remove the old root spacing (6px) that left a visible gap even when the
+    // revealer was collapsed; gap is now owned by the dropdown's top margin and
+    // clips cleanly to 0 when closed.
+    root.set_spacing(0);
 
     let dropdown_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     dropdown_box.add_css_class("tm-dropdown");
     dropdown_box.set_size_request(340, 480);
+
+    let revealer = gtk4::Revealer::new();
+    revealer.set_transition_type(gtk4::RevealerTransitionType::SlideDown);
+    revealer.set_transition_duration(280);
+    revealer.set_reveal_child(false);
+    revealer.set_halign(gtk4::Align::Fill);
+    revealer.set_hexpand(true);
+    revealer.set_overflow(gtk4::Overflow::Hidden);
     revealer.set_child(Some(&dropdown_box));
     root.append(&revealer);
+
+    // Single, debounced toggle. Open is a touch slower (280ms) than close
+    // (220ms) — feels responsive without feeling abrupt. Rapid taps mid-flight
+    // are ignored; that was the main "messed up pill" cause (double-toggle
+    // + simultaneous width+height resize).
+    let toggle = {
+        let revealer = revealer.clone();
+        let dropdown_box_clone = dropdown_box.clone();
+        Rc::new(move || {
+            if revealer.is_child_revealed() != revealer.reveals_child() {
+                return;
+            }
+            let expanding = !revealer.reveals_child();
+            revealer.set_transition_duration(if expanding { 280 } else { 220 });
+            // Used only for the subtle opacity nudge in css.rs.
+            if expanding {
+                dropdown_box_clone.add_css_class("tm-dropdown-open");
+            } else {
+                dropdown_box_clone.remove_css_class("tm-dropdown-open");
+            }
+            revealer.set_reveal_child(expanding);
+        })
+    };
+    let pill_click = gtk4::GestureClick::new();
+    pill_click.set_button(1);
+    pill_click.connect_pressed(gtk4::glib::clone!(
+        #[strong] toggle,
+        move |_, n_press, _, _| {
+            if n_press == 1 {
+                toggle();
+            }
+        }
+    ));
+    pill.add_controller(pill_click);
 
     crate::ui::blur::install(&window, pill.upcast_ref(), dropdown_box.upcast_ref());
 

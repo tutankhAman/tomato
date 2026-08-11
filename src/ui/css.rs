@@ -87,6 +87,8 @@ window.tm-root > contents {
   border-radius: 9999px;
   padding: 6px 12px 6px 14px;
   box-shadow: 0 4px 16px alpha(black, 0.45);
+  /* No size/width animation — only the revealer below moves. Keeps the pill
+     perfectly still while the dropdown slides. */
 }
 
 .tm-pill-time {
@@ -102,6 +104,15 @@ window.tm-root > contents {
   border: 1px solid @tm_border;
   border-radius: 22px;
   box-shadow: 0 24px 70px alpha(black, 0.55), 0 2px 12px alpha(black, 0.35);
+  /* Premium reveal: dropdown's own opacity tick eases with the height clip
+     so the card doesn't look pasted. 6px top margin is the only gap to the
+     pill and it clips to 0 when the revealer is closed — no extra root gap. */
+  margin-top: 6px;
+  opacity: 0.98;
+  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+.tm-dropdown-open {
+  opacity: 1;
 }
 
 /* ═══ Header ═══ */
