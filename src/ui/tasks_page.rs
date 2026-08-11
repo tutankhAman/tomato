@@ -6,7 +6,7 @@ use gtk4::prelude::*;
 use crate::todo::{Todo, TodoStore};
 
 pub fn build(store: Rc<RefCell<TodoStore>>) -> gtk4::Widget {
-    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
     page.add_css_class("tm-page");
     page.set_margin_top(6);
 
@@ -40,14 +40,13 @@ pub fn build(store: Rc<RefCell<TodoStore>>) -> gtk4::Widget {
     let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     footer.set_margin_top(2);
 
-    let count = gtk4::Label::new(None);
-    count.add_css_class("tm-footer");
-    count.set_hexpand(true);
-    count.set_xalign(0.0);
-    footer.append(&count);
+    let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    spacer.set_hexpand(true);
+    footer.append(&spacer);
 
     let clear_btn = gtk4::Button::with_label("Clear done");
     clear_btn.add_css_class("tm-link");
+    clear_btn.set_valign(gtk4::Align::Center);
     footer.append(&clear_btn);
     page.append(&footer);
 
@@ -58,7 +57,7 @@ pub fn build(store: Rc<RefCell<TodoStore>>) -> gtk4::Widget {
     let update_ui: Rc<RebuildFn> = {
         let store_c = Rc::clone(&store);
         let list_c = list.clone();
-        let count_c = count.clone();
+        let clear_c = clear_btn.clone();
         let cell: Rc<RefCell<Option<Rc<RebuildFn>>>> = Rc::new(RefCell::new(None));
         let cell_clone = Rc::clone(&cell);
         let mk: Rc<RebuildFn> = Rc::new(move || {
@@ -72,15 +71,13 @@ pub fn build(store: Rc<RefCell<TodoStore>>) -> gtk4::Widget {
             for todo in &items {
                 let is_active = s.active_id.as_deref() == Some(&todo.id);
                 let row = if let Some(ref f) = cb {
-                    make_row(todo, is_active, &store_c, &count_c, f)
+                    make_row(todo, is_active, &store_c, f)
                 } else {
-                    make_row_fallback(todo, is_active, &store_c, &count_c)
+                    make_row_fallback(todo, is_active, &store_c)
                 };
                 list_c.append(&row);
             }
-            let active_count = s.remaining_count();
-            let done_count = items.len() - active_count;
-            count_c.set_label(&format!("{active_count} active · {done_count} done"));
+            clear_c.set_visible(items.iter().any(|t| t.done));
         });
         *cell.borrow_mut() = Some(Rc::clone(&mk));
         mk
@@ -142,7 +139,6 @@ fn make_row(
     todo: &Todo,
     is_active: bool,
     store: &Rc<RefCell<TodoStore>>,
-    _count: &gtk4::Label,
     update_ui: &Rc<dyn Fn()>,
 ) -> gtk4::ListBoxRow {
     let row = gtk4::ListBoxRow::new();
@@ -205,9 +201,6 @@ fn make_row(
     est_box.set_valign(gtk4::Align::Center);
     est_box.append(&est_minus);
     est_box.append(&est_plus);
-    if todo.pomodoros_estimated == 0 && todo.pomodoros_done == 0 {
-        est_box.set_opacity(0.45);
-    }
 
     // Focus target star
     let star_btn = gtk4::Button::from_icon_name(if is_active {
@@ -230,12 +223,18 @@ fn make_row(
     del_btn.add_css_class("tm-rowbtn");
     del_btn.set_tooltip_text(Some("Delete task"));
 
+    // Hover-revealed secondary actions: estimate stepper + delete
+    let actions_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+    actions_box.add_css_class("tm-row-actions");
+    actions_box.set_valign(gtk4::Align::Center);
+    actions_box.append(&est_box);
+    actions_box.append(&del_btn);
+
     row_box.append(&check);
     row_box.append(&title_box);
     row_box.append(&pomo_badge);
-    row_box.append(&est_box);
     row_box.append(&star_btn);
-    row_box.append(&del_btn);
+    row_box.append(&actions_box);
 
     let id = todo.id.clone();
     let initial_title = todo.title.clone();
@@ -346,8 +345,6 @@ fn make_row(
         id_clone,
         #[weak]
         pomo_badge,
-        #[weak]
-        est_box,
         move |_| {
             let mut s = store.borrow_mut();
             let cur = s.items.iter().find(|t| t.id == id_clone).map(|t| t.pomodoros_estimated).unwrap_or(0);
@@ -356,7 +353,6 @@ fn make_row(
                 let done = s.items.iter().find(|t| t.id == id_clone).map(|t| t.pomodoros_done).unwrap_or(0);
                 drop(s);
                 update_pomo_label(&pomo_badge, done, next);
-                if next == 0 && done == 0 { est_box.set_opacity(0.45); } else { est_box.set_opacity(1.0); }
                 if let Err(e) = store.borrow().save() {
                     eprintln!("tomato: failed to save todo store: {e}");
                 }
@@ -371,8 +367,6 @@ fn make_row(
         id_clone2,
         #[weak]
         pomo_badge,
-        #[weak]
-        est_box,
         move |_| {
             let mut s = store.borrow_mut();
             let cur = s.items.iter().find(|t| t.id == id_clone2).map(|t| t.pomodoros_estimated).unwrap_or(0);
@@ -381,7 +375,6 @@ fn make_row(
                 let done = s.items.iter().find(|t| t.id == id_clone2).map(|t| t.pomodoros_done).unwrap_or(0);
                 drop(s);
                 update_pomo_label(&pomo_badge, done, next);
-                est_box.set_opacity(1.0);
                 if let Err(e) = store.borrow().save() {
                     eprintln!("tomato: failed to save todo store: {e}");
                 }
@@ -468,8 +461,7 @@ fn make_row_fallback(
     todo: &Todo,
     is_active: bool,
     store: &Rc<RefCell<TodoStore>>,
-    _count: &gtk4::Label,
 ) -> gtk4::ListBoxRow {
     let noop: Rc<dyn Fn()> = Rc::new(|| {});
-    make_row(todo, is_active, store, _count, &noop)
+    make_row(todo, is_active, store, &noop)
 }

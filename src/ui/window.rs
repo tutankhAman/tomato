@@ -138,35 +138,18 @@ pub fn build(app: &libadwaita::Application) {
     pill_time.set_valign(gtk4::Align::Center);
     pill.append(&pill_time);
 
+    // Session counter — current focus session within the cycle / total.
+    let pill_cycle = gtk4::Label::new(Some("0/4"));
+    pill_cycle.add_css_class("tm-pill-cycle");
+    pill_cycle.set_valign(gtk4::Align::Center);
+    pill.append(&pill_cycle);
+
     let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
     pill.append(&spacer);
 
-    // Theme toggle and Close button moved to the pill for convenience
     let pill_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
     pill_actions.set_valign(gtk4::Align::Center);
-    let theme_btn = gtk4::Button::new();
-    theme_btn.set_valign(gtk4::Align::Center);
-    theme_btn.add_css_class("tm-iconbtn");
-    let style_manager = libadwaita::StyleManager::default();
-    theme_btn.set_icon_name(if style_manager.is_dark() {
-        "weather-clear-symbolic"
-    } else {
-        "weather-clear-night-symbolic"
-    });
-    theme_btn.connect_clicked(|btn| {
-        let sm = libadwaita::StyleManager::default();
-        if sm.is_dark() {
-            sm.set_color_scheme(libadwaita::ColorScheme::ForceLight);
-            btn.set_icon_name("weather-clear-night-symbolic");
-        } else {
-            sm.set_color_scheme(libadwaita::ColorScheme::ForceDark);
-            btn.set_icon_name("weather-clear-symbolic");
-        }
-        crate::ui::reload_theme();
-    });
-    pill_actions.append(&theme_btn);
-
     let close_btn = gtk4::Button::from_icon_name("window-close-symbolic");
     close_btn.set_valign(gtk4::Align::Center);
     close_btn.add_css_class("tm-iconbtn");
@@ -199,15 +182,12 @@ pub fn build(app: &libadwaita::Application) {
 
     // Layout contract:
     // - The pill's width animation is CSS-driven (min-width) so the layer-shell
-    //   window size stays locked at 340 and the compositor never re-negotiates
+    //   window size stays locked at 300 and the compositor never re-negotiates
     //   width mid-flight. No size-allocate loop, no dropped frames.
-    // - Vertical motion is the revealer's SlideDown. Giving the root a fixed
-    //   inter-child spacing keeps the pill's rounded bottom edge outside the
-    //   revealer's clip — that's the "broken in half vertically" fix. The
-    //   previous configuration (revealer Overflow::Hidden + root spacing 0
-    //   + dropdown margin-top) put the pill edge right on the clip boundary
-    //   while both animations ran, so the pill's bottom was sliced off.
-    window.set_size_request(340, -1);
+    // - Vertical motion is the revealer's SlideDown, clipped to the dropdown's
+    //   box; the pill (overlay, no clip) slides its rounded bottom edge over
+    //   that clip boundary, hiding the seam.
+    window.set_size_request(280, -1);
     root.set_halign(gtk4::Align::Fill);
     root.set_hexpand(true);
     root.set_valign(gtk4::Align::Start);
@@ -220,7 +200,7 @@ pub fn build(app: &libadwaita::Application) {
 
     let dropdown_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     dropdown_box.add_css_class("tm-dropdown");
-    dropdown_box.set_size_request(340, 480);
+    dropdown_box.set_size_request(280, 460);
     dropdown_box.set_overflow(gtk4::Overflow::Hidden);
     dropdown_box.set_valign(gtk4::Align::Start);
 
@@ -237,9 +217,7 @@ pub fn build(app: &libadwaita::Application) {
     root.set_child(Some(&revealer));
 
     // Bring back pill resize — but now as a CSS-driven min-width animation
-    // that stays in lockstep with the revealer (same easing/duration) and
-    // never breaks the pill's vertical layout. Debounce prevents double-
-    // toggling mid-flight which previously left the pill half-clipped.
+    // that stays in lockstep with the revealer (same easing/duration).
     let toggle = {
         let revealer = revealer.clone();
         let pill_clone = pill.clone();
@@ -262,6 +240,19 @@ pub fn build(app: &libadwaita::Application) {
             }
             revealer.set_reveal_child(expanding);
 
+            // Force full redraws during the animation to fix graphical glitches
+            // (e.g. elements cut in half) caused by GTK's dirty region tracking
+            // stumbling over the CSS width transition or async Wayland resizes.
+            let p_clone = pill_clone.clone();
+            let start = std::time::Instant::now();
+            p_clone.add_tick_callback(move |w, _| {
+                queue_draw_recursive(w.upcast_ref());
+                if start.elapsed().as_millis() > duration as u128 + 50 {
+                    gtk4::glib::ControlFlow::Break
+                } else {
+                    gtk4::glib::ControlFlow::Continue
+                }
+            });
         })
     };
     let pill_click = gtk4::GestureClick::new();
@@ -391,11 +382,18 @@ pub fn build(app: &libadwaita::Application) {
     // ── Segmented switcher ──────────────────────────────────────────────────
     let switcher = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
     switcher.add_css_class("tm-seg");
+    switcher.add_css_class("tm-seg-switcher");
     switcher.set_homogeneous(true);
 
-    let timer_btn = gtk4::ToggleButton::with_label("Timer");
-    let tasks_btn = gtk4::ToggleButton::with_label("Tasks");
-    let settings_btn = gtk4::ToggleButton::with_label("Settings");
+    let timer_btn = gtk4::ToggleButton::new();
+    let tasks_btn = gtk4::ToggleButton::new();
+    let settings_btn = gtk4::ToggleButton::new();
+    timer_btn.set_icon_name("alarm-symbolic");
+    tasks_btn.set_icon_name("view-list-symbolic");
+    settings_btn.set_icon_name("emblem-system-symbolic");
+    timer_btn.set_tooltip_text(Some("Timer"));
+    tasks_btn.set_tooltip_text(Some("Tasks"));
+    settings_btn.set_tooltip_text(Some("Settings"));
     for b in [&timer_btn, &tasks_btn, &settings_btn] {
         b.add_css_class("tm-seg-btn");
         b.set_hexpand(true);
@@ -463,8 +461,14 @@ pub fn build(app: &libadwaita::Application) {
         }
     }
 
-    let timer_page_widget =
-        timer_page::build(Rc::clone(&config), Rc::clone(&timer), Rc::clone(&tasks), &pill_ring, &pill_time);
+    let timer_page_widget = timer_page::build(
+        Rc::clone(&config),
+        Rc::clone(&timer),
+        Rc::clone(&tasks),
+        &pill_ring,
+        &pill_time,
+        &pill_cycle,
+    );
     stack.add_named(&timer_page_widget, Some("timer"));
 
     let tasks_page_widget = tasks_page::build(Rc::clone(&tasks));
@@ -689,5 +693,14 @@ where
             .action(&action)
             .build();
         controller.add_shortcut(shortcut);
+    }
+}
+
+fn queue_draw_recursive(widget: &gtk4::Widget) {
+    widget.queue_draw();
+    let mut child = widget.first_child();
+    while let Some(c) = child {
+        queue_draw_recursive(&c);
+        child = c.next_sibling();
     }
 }

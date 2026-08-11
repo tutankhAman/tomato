@@ -10,7 +10,7 @@ use crate::timer::{Phase, Status, Timer};
 use crate::todo::TodoStore;
 
 /// Diameter of the progress ring.
-const RING: i32 = 204;
+const RING: i32 = 176;
 /// Ring stroke width.
 const RING_W: f64 = 9.0;
 
@@ -20,16 +20,18 @@ pub fn build(
     store: Rc<RefCell<TodoStore>>,
     pill_ring: &gtk4::DrawingArea,
     pill_time: &gtk4::Label,
+    pill_cycle: &gtk4::Label,
 ) -> gtk4::Widget {
     let page = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     page.add_css_class("tm-page");
+    page.set_vexpand(true);
 
     // ── Phase label ─────────────────────────────────────────────────────────
     let phase_lbl = gtk4::Label::new(Some("FOCUS"));
     phase_lbl.add_css_class("tm-phase");
     phase_lbl.add_css_class("tm-phase-focus");
     phase_lbl.set_halign(gtk4::Align::Center);
-    phase_lbl.set_margin_top(6);
+    phase_lbl.set_margin_top(4);
     page.append(&phase_lbl);
 
     // ── Ring ────────────────────────────────────────────────────────────────
@@ -37,7 +39,7 @@ pub fn build(
     overlay.set_halign(gtk4::Align::Center);
     overlay.set_valign(gtk4::Align::Center);
     overlay.set_size_request(RING, RING);
-    overlay.set_margin_top(8);
+    overlay.set_margin_top(20);
 
     let ring = gtk4::DrawingArea::new();
     ring.set_size_request(RING, RING);
@@ -64,7 +66,7 @@ pub fn build(
     let dots = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
     dots.add_css_class("tm-dots");
     dots.set_halign(gtk4::Align::Center);
-    dots.set_margin_top(12);
+    dots.set_margin_top(16);
     page.append(&dots);
 
     // ── Active task chip ────────────────────────────────────────────────────
@@ -85,20 +87,15 @@ pub fn build(
     chip.append(&chip_text);
     page.append(&chip);
 
-    // ── Active task hint (shown when no active task) ──────────────────────
-    let active_hint = gtk4::Label::new(Some("Star a task to focus · double-click a task title to rename"));
-    active_hint.add_css_class("tm-hint");
-    active_hint.add_css_class("tm-hint-center");
-    active_hint.set_halign(gtk4::Align::Center);
-    active_hint.set_wrap(true);
-    active_hint.set_margin_top(4);
-    page.append(&active_hint);
+    // Push controls to the bottom so the page fills the full dropdown height.
+    let spring = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    spring.set_vexpand(true);
+    page.append(&spring);
 
     // ── Controls ────────────────────────────────────────────────────────────
     let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
     controls.add_css_class("tm-ctl");
     controls.set_halign(gtk4::Align::Center);
-    controls.set_margin_top(16);
 
     let reset_btn = gtk4::Button::from_icon_name("view-refresh-symbolic");
     reset_btn.add_css_class("tm-btn-ghost");
@@ -114,14 +111,8 @@ pub fn build(
     controls.append(&reset_btn);
     controls.append(&start_btn);
     controls.append(&skip_btn);
+    controls.set_margin_bottom(2);
     page.append(&controls);
-
-    // ── Stats footer (minimal) ─────────────────────────────────────────────
-    let stats_lbl = gtk4::Label::new(Some("Today: —  ·  Week: —"));
-    stats_lbl.add_css_class("tm-stats");
-    stats_lbl.set_halign(gtk4::Align::Center);
-    stats_lbl.set_margin_top(14);
-    page.append(&stats_lbl);
 
     // ── Smooth ring animation state ─────────────────────────────────────────
     // Displayed progress eases toward the timer's real progress every frame.
@@ -280,8 +271,6 @@ pub fn build(
         timer,
         #[strong]
         store,
-        #[strong]
-        stats_store,
         #[weak]
         phase_lbl,
         #[weak]
@@ -297,15 +286,13 @@ pub fn build(
         #[weak]
         chip_text,
         #[weak]
-        active_hint,
-        #[weak]
         start_btn,
-        #[weak]
-        stats_lbl,
         #[weak(rename_to = pill_ring_w)]
         pill_ring,
         #[weak(rename_to = pill_time_w)]
         pill_time,
+        #[weak(rename_to = pill_cycle_w)]
+        pill_cycle,
         #[strong]
         target,
         #[strong]
@@ -356,49 +343,32 @@ pub fn build(
             *tg = real;
             drop(tg);
 
-            // Session dots
+            // Session dots + pill counter
             while let Some(child) = dots.first_child() {
                 dots.remove(&child);
             }
-            let cycles = cfg.timer.cycles_before_long_break.max(1) as usize;
-            let done = (t.completed_focus_sessions() % cfg.timer.cycles_before_long_break.max(1))
-                as usize;
-            for i in 0..cycles.min(8) {
+            let cycles = cfg.timer.cycles_before_long_break.max(1);
+            let done = t.completed_focus_sessions() % cycles;
+            pill_cycle_w.set_label(&format!("{done}/{cycles}"));
+            for i in 0..(cycles as usize).min(8) {
                 let d = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
                 d.add_css_class("tm-dot");
-                if i < done {
+                if i < done as usize {
                     d.add_css_class("tm-dot-on");
                     d.add_css_class(phase_class);
                 }
                 dots.append(&d);
             }
 
-            // Active task chip + hint
+            // Active task chip — hidden entirely without an active task.
             let s = store.borrow();
             if let Some(active) = s.active_task() {
                 chip_text.set_label(&active.title);
                 chip.set_visible(true);
-                active_hint.set_visible(false);
             } else {
                 chip.set_visible(false);
-                // Show hint only when there are tasks but none starred, or hint when empty
-                let has_tasks = !s.items.is_empty();
-                active_hint.set_visible(true);
-                if has_tasks {
-                    active_hint.set_label("Star a task to focus · double-click a task title to rename");
-                } else {
-                    active_hint.set_label("Add a task to track pomodoros per item");
-                }
             }
             drop(s);
-
-            // Stats footer
-            {
-                let stats = stats_store.borrow();
-                let (td_s, td_m) = stats.today_totals();
-                let (wk_s, wk_m) = stats.week_totals();
-                stats_lbl.set_label(&format!("Today: {td_s} · {td_m} min  ·  Week: {wk_s} · {wk_m} min"));
-            }
 
             // Start / pause button
             if t.status() == Status::Running {

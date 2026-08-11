@@ -44,7 +44,8 @@ fn ui_pages_build_expected_widgets() {
         let store = Rc::new(RefCell::new(TodoStore::default()));
         let dummy_ring = gtk4::DrawingArea::new();
         let dummy_label = gtk4::Label::new(None);
-        let widget = timer_page::build(Rc::clone(&config), Rc::clone(&timer), Rc::clone(&store), &dummy_ring, &dummy_label);
+        let dummy_cycle = gtk4::Label::new(None);
+        let widget = timer_page::build(Rc::clone(&config), Rc::clone(&timer), Rc::clone(&store), &dummy_ring, &dummy_label, &dummy_cycle);
 
         let page = widget.downcast::<gtk4::Box>().expect("timer page is a Box");
         assert!(page.has_css_class("tm-page"), "timer page has tm-page class");
@@ -73,13 +74,15 @@ fn ui_pages_build_expected_widgets() {
         let entries: Vec<gtk4::Entry> = find_widgets(&page);
         let buttons: Vec<gtk4::Button> = find_widgets(&page);
         let rows: Vec<gtk4::ListBoxRow> = find_widgets(&page);
-        let labels: Vec<gtk4::Label> = find_widgets(&page);
-        let found_footer = labels.iter().any(|lbl| lbl.label().contains("active"));
+        let found_clear = buttons
+            .iter()
+            .filter_map(|b| b.child()?.downcast::<gtk4::Label>().ok())
+            .any(|l| l.label() == "Clear done");
 
         assert!(!entries.is_empty(), "add-task entry present");
         assert!(!buttons.is_empty(), "add (+) button present");
         assert_eq!(rows.len(), 2, "two seeded tasks rendered as rows");
-        assert!(found_footer, "footer shows active/done counts");
+        assert!(found_clear, "footer has Clear done button");
     }
 
     // 3. Settings Page

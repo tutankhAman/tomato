@@ -23,28 +23,22 @@ where
 
     // ── Timer ───────────────────────────────────────────────────────────────
     page.append(&group_title("TIMER"));
-    page.append(&group_desc("Focus & break lengths. Presets set all four at once."));
 
     let timer_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     timer_group.add_css_class("tm-group");
 
-    // Preset segmented control
+    // Preset segmented control — minimal labels, no dedicated row chrome.
     let preset_wrap = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
     preset_wrap.add_css_class("tm-seg");
+    preset_wrap.add_css_class("tm-seg-preset");
     preset_wrap.set_homogeneous(true);
-    // Give presets a little breathing room inside the group
-    let preset_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-    preset_row.add_css_class("tm-setrow");
-    let preset_label = gtk4::Label::new(Some("Preset"));
-    preset_label.add_css_class("tm-setlabel");
-    preset_label.set_hexpand(true);
-    preset_label.set_xalign(0.0);
-    preset_row.append(&preset_label);
-    preset_row.append(&preset_wrap);
 
-    let classic_btn = gtk4::ToggleButton::with_label("Classic  25 / 5");
-    let deep_btn = gtk4::ToggleButton::with_label("Deep  50 / 10");
+    let classic_btn = gtk4::ToggleButton::with_label("25/5");
+    let deep_btn = gtk4::ToggleButton::with_label("50/10");
     let custom_btn = gtk4::ToggleButton::with_label("Custom");
+    classic_btn.set_tooltip_text(Some("Classic · 25 focus / 5 break / 15 long, every 4"));
+    deep_btn.set_tooltip_text(Some("Deep · 50 focus / 10 break / 20 long, every 4"));
+    custom_btn.set_tooltip_text(Some("Manual values below"));
     for b in [&classic_btn, &deep_btn, &custom_btn] {
         b.add_css_class("tm-seg-btn");
         b.set_hexpand(true);
@@ -73,7 +67,7 @@ where
         custom_btn.set_active(true);
     }
 
-    timer_group.append(&preset_row);
+    timer_group.append(&preset_wrap);
 
     let focus_spin = spin(1.0, 180.0, cfg.timer.focus_minutes as f64);
     let focus_box = with_suffix(&focus_spin, "min");
@@ -98,19 +92,11 @@ where
     cycles_box.append(&dots_preview);
     cycles_box.set_valign(gtk4::Align::Center);
     append_row(&timer_group, "Sessions before long break", &cycles_box, false);
-    // small hint under cycles
-    let cycles_hint = gtk4::Label::new(Some("How many focus sessions before a long break."));
-    cycles_hint.add_css_class("tm-hint");
-    cycles_hint.set_xalign(0.0);
-    cycles_hint.set_margin_start(14);
-    cycles_hint.set_margin_bottom(8);
-    timer_group.append(&cycles_hint);
 
     page.append(&timer_group);
 
     // ── Automation ──────────────────────────────────────────────────────────
     page.append(&group_title("AUTOMATION"));
-    page.append(&group_desc("What starts automatically when a phase ends."));
     let auto_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     auto_group.add_css_class("tm-group");
 
@@ -123,7 +109,6 @@ where
 
     // ── Window ──────────────────────────────────────────────────────────────
     page.append(&group_title("WINDOW"));
-    page.append(&group_desc("Placement & appearance. Drag the pill handle to fine-tune."));
 
     let win_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     win_group.add_css_class("tm-group");
@@ -172,6 +157,59 @@ where
     page.append(&notif_group);
 
     drop(cfg);
+
+    // ── Appearance ──────────────────────────────────────────────────────────
+    page.append(&group_title("APPEARANCE"));
+    let theme_group = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    theme_group.add_css_class("tm-group");
+
+    let theme_btns = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+    theme_btns.add_css_class("tm-seg");
+    theme_btns.add_css_class("tm-seg-preset");
+    theme_btns.set_homogeneous(true);
+    let sys_btn = gtk4::ToggleButton::with_label("System");
+    let light_btn = gtk4::ToggleButton::with_label("Light");
+    let dark_btn = gtk4::ToggleButton::with_label("Dark");
+    light_btn.set_group(Some(&sys_btn));
+    dark_btn.set_group(Some(&sys_btn));
+    for b in [&sys_btn, &light_btn, &dark_btn] {
+        b.add_css_class("tm-seg-btn");
+        b.set_hexpand(true);
+    }
+    // Only System or Dark is reachable if the app was launched in dark mode,
+    // since in-app toggling previously used ForceLight/ForceDark. Pick by state.
+    let style_manager = libadwaita::StyleManager::default();
+    if style_manager.is_dark() {
+        dark_btn.set_active(true);
+    } else {
+        light_btn.set_active(true);
+    }
+    theme_btns.append(&sys_btn);
+    theme_btns.append(&light_btn);
+    theme_btns.append(&dark_btn);
+
+    let set_scheme = Rc::new(move |scheme: libadwaita::ColorScheme| {
+        libadwaita::StyleManager::default().set_color_scheme(scheme);
+        crate::ui::reload_theme();
+    });
+    sys_btn.connect_toggled(gtk4::glib::clone!(#[strong] set_scheme, move |b| {
+        if b.is_active() {
+            set_scheme(libadwaita::ColorScheme::Default);
+        }
+    }));
+    light_btn.connect_toggled(gtk4::glib::clone!(#[strong] set_scheme, move |b| {
+        if b.is_active() {
+            set_scheme(libadwaita::ColorScheme::ForceLight);
+        }
+    }));
+    dark_btn.connect_toggled(gtk4::glib::clone!(#[strong] set_scheme, move |b| {
+        if b.is_active() {
+            set_scheme(libadwaita::ColorScheme::ForceDark);
+        }
+    }));
+
+    theme_group.append(&theme_btns);
+    page.append(&theme_group);
 
     // ── Persistence ─────────────────────────────────────────────────────────
     let save_config = gtk4::glib::clone!(
@@ -434,14 +472,6 @@ fn group_title(text: &str) -> gtk4::Label {
     let lbl = gtk4::Label::new(Some(text));
     lbl.set_xalign(0.0);
     lbl.add_css_class("tm-group-title");
-    lbl
-}
-
-fn group_desc(text: &str) -> gtk4::Label {
-    let lbl = gtk4::Label::new(Some(text));
-    lbl.set_xalign(0.0);
-    lbl.set_wrap(true);
-    lbl.add_css_class("tm-group-desc");
     lbl
 }
 

@@ -85,16 +85,26 @@ window.tm-root > contents {
   background-color: alpha(@tm_bg, __OPACITY__);
   border: 1px solid @tm_border;
   border-radius: 9999px;
-  padding: 6px 12px 6px 14px;
+  padding: 5px 8px 5px 12px;
   box-shadow: none;
   /* Pill width eases with the dropdown — premium, high-framerate.
      Collapsed is its natural width; expanded locks to the dropdown width. */
-  min-width: 220px;
+  min-width: 192px;
   transition: min-width 300ms cubic-bezier(0.2, 0, 0, 1);
 }
 .tm-pill-open {
-  min-width: 316px;
+  min-width: 256px;
   box-shadow: none;
+}
+
+.tm-pill-cycle {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+  color: @tm_text_dim;
+  background-color: @tm_chip_bg;
+  border: 1px solid @tm_border;
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: 2px;
 }
 
 .tm-pill-time {
@@ -112,14 +122,11 @@ window.tm-root > contents {
   box-shadow: none;
   /* Gap to pill is owned by the root box spacing so the revealer clip does
      not reveal a half-rounded top edge mid-animation. */
-  opacity: 0;
-  transform: scale(0.92) translateY(-10px);
-  transition: opacity 180ms ease,
-              transform 350ms cubic-bezier(0.34, 1.4, 0.64, 1);
+  opacity: 0.98;
+  transition: opacity 220ms cubic-bezier(0.2, 0, 0, 1);
 }
 .tm-dropdown-open {
   opacity: 1;
-  transform: scale(1) translateY(0);
 }
 
 /* ═══ Header ═══ */
@@ -133,26 +140,30 @@ window.tm-root > contents {
 
 /* ═══ Segmented switcher ═══ */
 .tm-seg {
-  margin: 8px 14px 4px 14px; padding: 3px;
-  background-color: @tm_seg_bg;
-  border: 1px solid @tm_border;
+  padding: 3px;
+  background-color: transparent;
+  border: none;
   border-radius: 999px;
 }
+/* Switcher instance sits at the top of the dropdown; preset instance lives
+   inside a settings group and needs inner padding instead. */
+.tm-seg-switcher { margin: 6px 10px 2px 10px; }
+.tm-seg-preset { padding: 8px 12px 0 12px; }
 .tm-seg-btn {
-  min-height: 28px; padding: 0 10px;
+  min-height: 26px; padding: 0 8px;
   border-radius: 999px; border: none; background: transparent; box-shadow: none;
-  font-size: 10px; font-weight: 800; letter-spacing: 0.08em;
   color: @tm_text_dim;
+  font-size: 11px; font-weight: 700;
   transition: background-color 150ms ease, color 150ms ease;
 }
 .tm-seg-btn:hover { color: @tm_text; }
 .tm-seg-btn:checked {
   background-color: @tm_seg_active_bg; color: @tm_text;
-  box-shadow: 0 2px 8px alpha(black, 0.35);
+  box-shadow: 0 1px 4px alpha(black, 0.28);
 }
 
 /* ═══ Pages ═══ */
-.tm-page { padding: 6px 16px 16px 16px; }
+.tm-page { padding: 6px 14px 12px 14px; }
 .tm-dim { color: @tm_text_dim; }
 .tm-faint { color: @tm_text_faint; }
 
@@ -162,7 +173,7 @@ window.tm-root > contents {
 .tm-phase-short { color: @tm_teal; }
 .tm-phase-long { color: @tm_indigo; }
 
-.tm-time { font-size: 44px; font-weight: 650; letter-spacing: -0.03em; color: @tm_text; }
+.tm-time { font-size: 38px; font-weight: 650; letter-spacing: -0.03em; color: @tm_text; }
 .tm-time-sub { font-size: 9px; font-weight: 800; letter-spacing: 0.24em; color: @tm_text_faint; }
 
 .tm-dots { min-height: 10px; }
@@ -234,11 +245,19 @@ window.tm-root > contents {
 
 .tm-row {
   background-color: @tm_row_bg; border: 1px solid @tm_row_border;
-  border-radius: 12px; padding: 7px 9px; margin-bottom: 6px;
+  border-radius: 12px; padding: 6px 4px 6px 10px; margin-bottom: 6px;
   transition: background-color 140ms ease, border-color 140ms ease;
 }
 .tm-row:hover { background-color: @tm_row_hover_bg; border-color: @tm_row_hover_border; }
 .tm-row-active { border-color: alpha(@tm_caret, 0.45); background-color: @tm_accent_soft; }
+
+/* Secondary row actions (estimate stepper, delete) appear on hover only. */
+.tm-row-actions {
+  opacity: 0;
+  transition: opacity 130ms ease;
+}
+.tm-row:hover .tm-row-actions,
+.tm-row:focus-within .tm-row-actions { opacity: 1; }
 
 .tm-check { min-width: 18px; min-height: 18px; padding: 0; margin: 0; background-color: transparent; }
 .tm-check check {
@@ -269,9 +288,6 @@ window.tm-root > contents {
 .tm-rowbtn:hover { background-color: @tm_fill_hover; color: @tm_text; }
 .tm-rowbtn-on { color: @tm_caret; }
 
-.tm-footer { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; color: @tm_text_faint; }
-.tm-stats { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; color: @tm_text_dim; opacity: 0.9; }
-.tm-hint-center { font-size: 9.5px; letter-spacing: 0.02em; }
 .tm-entry-inline { min-height: 28px; font-size: 12px; }
 .tm-rowbtn-sm { min-width: 22px; min-height: 22px; }
 .tm-link {
@@ -284,29 +300,27 @@ window.tm-root > contents {
 /* ═══ Settings ═══ */
 .tm-group-title {
   font-size: 9.5px; font-weight: 800; letter-spacing: 0.14em;
-  color: @tm_text_faint; margin: 14px 0 2px 2px;
+  color: @tm_text_faint; margin: 14px 0 6px 4px;
 }
-.tm-group-desc {
-  font-size: 10px; font-weight: 500; color: @tm_text_faint;
-  margin: 0 0 6px 2px;
-}
+.tm-group-title:first-child { margin-top: 6px; }
 .tm-group { background-color: @tm_row_bg; border: 1px solid @tm_row_border; border-radius: 14px; }
 .tm-setrow { padding: 10px 14px; }
 .tm-setrow-sep { border-bottom: 1px solid @tm_row_border; }
 .tm-setlabel { font-size: 12.5px; font-weight: 550; color: @tm_text; }
 .tm-suffix { font-size: 10px; font-weight: 700; color: @tm_text_faint; letter-spacing: 0.04em; }
-.tm-hint { font-size: 9.5px; font-weight: 500; color: @tm_text_faint; }
 .tm-opacity-val { font-size: 11px; font-weight: 700; color: @tm_text_dim; }
 .tm-dots-more { font-size: 10px; font-weight: 700; color: @tm_text_faint; margin-left: 2px; }
 
 spinbutton.tm-spin {
   background-color: @tm_control_bg; border: 1px solid @tm_control_border;
-  border-radius: 8px; color: @tm_text; font-size: 12px; min-height: 26px;
+  border-radius: 8px; color: @tm_text; font-size: 12px;
+  min-height: 28px;
+  padding: 4px 2px;
   box-shadow: none;
 }
 spinbutton.tm-spin button { background-color: transparent; border: none; color: @tm_text_dim; box-shadow: none; }
 spinbutton.tm-spin button:hover { color: @tm_text; }
-spinbutton.tm-spin text { background-color: transparent; color: @tm_text; }
+spinbutton.tm-spin text { background-color: transparent; color: @tm_text; padding: 2px 4px; }
 
 dropdown.tm-spin button {
   background-color: @tm_control_bg; border: 1px solid @tm_control_border;
