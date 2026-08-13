@@ -191,6 +191,12 @@ window.tm-root > contents {
 .tm-dot-on.tm-phase-short { background-color: @tm_teal; }
 .tm-dot-on.tm-phase-long { background-color: @tm_indigo; }
 
+.tm-cycle {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
+  color: @tm_text_faint;
+}
+.tm-cycle-done { color: @tm_accent; }
+
 .tm-chip {
   background-color: @tm_chip_bg;
   border: 1px solid @tm_border;
@@ -260,13 +266,10 @@ window.tm-root > contents {
 .tm-row:hover { background-color: @tm_row_hover_bg; border-color: @tm_row_hover_border; }
 .tm-row-active { border-color: alpha(@tm_caret, 0.45); background-color: @tm_accent_soft; }
 
-/* Secondary row actions (estimate stepper, delete) appear on hover only. */
+/* Secondary row actions (estimate stepper, delete) are always visible. */
 .tm-row-actions {
-  opacity: 0;
-  transition: opacity 130ms ease;
+  opacity: 1;
 }
-.tm-row:hover .tm-row-actions,
-.tm-row:focus-within .tm-row-actions { opacity: 1; }
 
 .tm-check { min-width: 18px; min-height: 18px; padding: 0; margin: 0; background-color: transparent; }
 .tm-check check {

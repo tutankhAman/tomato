@@ -75,6 +75,18 @@ pub fn build(
     dots.set_margin_top(16);
     page.append(&dots);
 
+    // Cache of what the dots currently show; they're only rebuilt when the
+    // (done, cycles, phase) tuple actually changes, not on every 250ms tick.
+    let last_dots = Rc::new(RefCell::new(None::<(u32, u32, Phase)>));
+
+    // ── Cycle counter ───────────────────────────────────────────────────────
+    let cycle_lbl = gtk4::Label::new(None);
+    cycle_lbl.add_css_class("tm-cycle");
+    cycle_lbl.set_halign(gtk4::Align::Center);
+    cycle_lbl.set_margin_top(4);
+    cycle_lbl.set_visible(false);
+    page.append(&cycle_lbl);
+
     // ── Active task chip ────────────────────────────────────────────────────
     let chip = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     chip.add_css_class("tm-chip");
@@ -288,6 +300,12 @@ pub fn build(
         ring,
         #[weak]
         dots,
+        #[strong]
+        last_dots,
+        #[weak]
+        cycle_lbl,
+        #[strong]
+        stats_store,
         #[weak]
         chip,
         #[weak]
@@ -350,21 +368,57 @@ pub fn build(
             *tg = real;
             drop(tg);
 
-            // Session dots + pill counter
-            while let Some(child) = dots.first_child() {
-                dots.remove(&child);
-            }
+            // Session dots + pill counter. Rebuild dots only when their
+            // (done, cycles, phase) key changes; the pill counter is cheap.
             let cycles = cfg.timer.cycles_before_long_break.max(1);
             let done = t.completed_focus_sessions() % cycles;
             pill_cycle_w.set_label(&format!("{done}/{cycles}"));
-            for i in 0..(cycles as usize).min(8) {
-                let d = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-                d.add_css_class("tm-dot");
-                if i < done as usize {
-                    d.add_css_class("tm-dot-on");
-                    d.add_css_class(phase_class);
+            if *last_dots.borrow() != Some((done, cycles, t.phase())) {
+                *last_dots.borrow_mut() = Some((done, cycles, t.phase()));
+                while let Some(child) = dots.first_child() {
+                    dots.remove(&child);
                 }
-                dots.append(&d);
+                for i in 0..(cycles as usize).min(8) {
+                    let d = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+                    d.add_css_class("tm-dot");
+                    if i < done as usize {
+                        d.add_css_class("tm-dot-on");
+                        d.add_css_class(phase_class);
+                    }
+                    dots.append(&d);
+                }
+            }
+
+            // Cycle counter. A cycle is the configured focus sessions plus the
+            // long break that follows them. With a daily target configured the
+            // label shows today's progress (stats track completed sessions per
+            // day); otherwise it counts lifetime cycles.
+            let target = cfg.timer.cycle_target;
+            if target > 0 {
+                let today_cycles = stats_store
+                    .borrow()
+                    .today()
+                    .map(|e| e.sessions)
+                    .unwrap_or(0)
+                    / cfg.timer.cycles_before_long_break.max(1);
+                let shown = today_cycles.min(target);
+                cycle_lbl.set_label(&format!("{shown}/{target} cycles today"));
+                cycle_lbl.set_visible(true);
+                if today_cycles >= target {
+                    cycle_lbl.add_css_class("tm-cycle-done");
+                } else {
+                    cycle_lbl.remove_css_class("tm-cycle-done");
+                }
+            } else {
+                cycle_lbl.remove_css_class("tm-cycle-done");
+                let cycles_done = t.completed_cycles(&cfg.timer);
+                if cycles_done > 0 {
+                    let unit = if cycles_done == 1 { "cycle" } else { "cycles" };
+                    cycle_lbl.set_label(&format!("{cycles_done} {unit} completed"));
+                    cycle_lbl.set_visible(true);
+                } else {
+                    cycle_lbl.set_visible(false);
+                }
             }
 
             // Active task chip — hidden entirely without an active task.
@@ -400,13 +454,15 @@ pub fn build(
             }
         })
     };
-    // Throttled save while running: one flush per ~1s
+    // Throttled save while running: one flush per ~30s. Phase changes, pauses
+    // and close save immediately, and a stale running snapshot self-corrects
+    // on restore (wall-clock elapsed is subtracted), so a crash loses nothing.
     let save_throttled = {
         let save_timer = Rc::clone(&save_timer);
         let last_save = Rc::new(RefCell::new(std::time::Instant::now()));
         Rc::new(move || {
             let now = std::time::Instant::now();
-            if now.duration_since(*last_save.borrow()) >= Duration::from_secs(1) {
+            if now.duration_since(*last_save.borrow()) >= Duration::from_secs(30) {
                 *last_save.borrow_mut() = now;
                 save_timer();
             }

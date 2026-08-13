@@ -58,6 +58,14 @@ impl Timer {
         self.completed_focus_sessions
     }
 
+    /// Number of fully completed cycles. One cycle is the configured number of
+    /// focus sessions (`cycles_before_long_break`) plus the long break that
+    /// follows them, so a cycle counts as complete once its focus sessions
+    /// are done and the long break has started.
+    pub fn completed_cycles(&self, config: &TimerConfig) -> u32 {
+        self.completed_focus_sessions / config.cycles_before_long_break.max(1)
+    }
+
     pub fn start(&mut self) {
         if self.status != Status::Running {
             self.status = Status::Running;
@@ -118,26 +126,10 @@ impl Timer {
     }
 
     pub fn advance(&mut self, config: &TimerConfig) -> Phase {
-        let next = match self.phase {
-            Phase::Focus => {
-                self.completed_focus_sessions += 1;
-                let cycle = config.cycles_before_long_break.max(1);
-                if self.completed_focus_sessions.is_multiple_of(cycle) {
-                    Phase::LongBreak
-                } else {
-                    Phase::ShortBreak
-                }
-            }
-            Phase::ShortBreak | Phase::LongBreak => Phase::Focus,
-        };
+        let next = next_phase(self.phase, &mut self.completed_focus_sessions, config);
         self.phase = next;
         self.remaining = Self::phase_duration_of(config, next);
-        self.status = match next {
-            Phase::Focus if config.auto_start_focus => Status::Running,
-            Phase::Focus => Status::Idle,
-            _ if config.auto_start_breaks => Status::Running,
-            _ => Status::Idle,
-        };
+        self.status = status_after(next, config);
         next
     }
 
@@ -149,7 +141,37 @@ impl Timer {
         };
         Duration::from_secs(u64::from(minutes) * 60)
     }
+}
 
+/// Compute the phase that follows `phase`, counting the just-completed focus
+/// session into `completed`. Shared by `Timer::advance` and snapshot restore
+/// fast-forwarding so both paths can never drift apart.
+fn next_phase(phase: Phase, completed: &mut u32, config: &TimerConfig) -> Phase {
+    match phase {
+        Phase::Focus => {
+            *completed += 1;
+            let cycle = config.cycles_before_long_break.max(1);
+            if completed.is_multiple_of(cycle) {
+                Phase::LongBreak
+            } else {
+                Phase::ShortBreak
+            }
+        }
+        Phase::ShortBreak | Phase::LongBreak => Phase::Focus,
+    }
+}
+
+/// The status to enter `next` with, honoring the auto-start settings.
+fn status_after(next: Phase, config: &TimerConfig) -> Status {
+    match next {
+        Phase::Focus if config.auto_start_focus => Status::Running,
+        Phase::Focus => Status::Idle,
+        _ if config.auto_start_breaks => Status::Running,
+        _ => Status::Idle,
+    }
+}
+
+impl Timer {
     // --- Persistence helpers (pure logic; no GTK) ---
 
     pub fn snapshot(&self) -> TimerSnapshot {
@@ -188,27 +210,11 @@ impl Timer {
                 }
                 // Current phase finished while we were away.
                 elapsed_dur -= remaining;
-                // Advance once (reuse the same logic as Timer::advance but without needing self).
-                let next = match phase {
-                    Phase::Focus => {
-                        completed += 1;
-                        let cycle = config.cycles_before_long_break.max(1);
-                        if completed.is_multiple_of(cycle) {
-                            Phase::LongBreak
-                        } else {
-                            Phase::ShortBreak
-                        }
-                    }
-                    Phase::ShortBreak | Phase::LongBreak => Phase::Focus,
-                };
+                // Advance once (reuse the same logic as Timer::advance).
+                let next = next_phase(phase, &mut completed, config);
                 phase = next;
                 remaining = Self::phase_duration_of(config, next);
-                status = match next {
-                    Phase::Focus if config.auto_start_focus => Status::Running,
-                    Phase::Focus => Status::Idle,
-                    _ if config.auto_start_breaks => Status::Running,
-                    _ => Status::Idle,
-                };
+                status = status_after(next, config);
                 if status != Status::Running {
                     // Stopped; remaining stays at full duration, discard leftover elapsed.
                     break;
@@ -342,9 +348,39 @@ mod tests {
     }
 
     #[test]
+    fn completed_cycles_use_sessions_per_cycle() {
+        let cfg = TimerConfig::default(); // 4 focus sessions per cycle
+        let mut t = Timer::new(&cfg);
+        assert_eq!(t.completed_cycles(&cfg), 0);
+        // Focus -> short break -> focus -> short break: 2 sessions, cycle open
+        t.skip(&cfg);
+        t.skip(&cfg);
+        t.skip(&cfg);
+        assert_eq!(t.completed_focus_sessions(), 2);
+        assert_eq!(t.completed_cycles(&cfg), 0);
+        // 4th session rolls into the long break: one full cycle done
+        t.skip(&cfg);
+        t.skip(&cfg);
+        t.skip(&cfg);
+        t.skip(&cfg);
+        assert_eq!(t.phase(), Phase::LongBreak);
+        assert_eq!(t.completed_cycles(&cfg), 1);
+        // Long break -> focus: still one full cycle done
+        t.skip(&cfg);
+        assert_eq!(t.phase(), Phase::Focus);
+        assert_eq!(t.completed_cycles(&cfg), 1);
+        // One more focus session starts cycle 2
+        t.skip(&cfg);
+        assert_eq!(t.completed_focus_sessions(), 5);
+        assert_eq!(t.completed_cycles(&cfg), 1);
+    }
+
+    #[test]
     fn break_returns_to_focus_and_auto_starts() {
-        let mut cfg = TimerConfig::default();
-        cfg.auto_start_focus = true;
+        let cfg = TimerConfig {
+            auto_start_focus: true,
+            ..TimerConfig::default()
+        };
         let mut t = Timer::new(&cfg);
         t.skip(&cfg);
         t.skip(&cfg);
@@ -396,7 +432,7 @@ mod tests {
         let restored = Timer::restore_at(snap, &cfg, Utc::now());
         // 90s elapsed, so ~23:30 left (allow 2s drift for test execution)
         let rem = restored.remaining().as_secs();
-        assert!(rem >= 23 * 60 && rem <= 24 * 60, "remaining {rem}s not in 23..24m");
+        assert!((23 * 60..=24 * 60).contains(&rem), "remaining {rem}s not in 23..24m");
         assert_eq!(restored.phase(), Phase::Focus);
         assert_eq!(restored.status(), Status::Running);
     }
@@ -421,8 +457,10 @@ mod tests {
 
     #[test]
     fn restore_running_advances_when_elapsed_exceeds_remaining() {
-        let mut cfg = TimerConfig::default();
-        cfg.auto_start_breaks = true;
+        let cfg = TimerConfig {
+            auto_start_breaks: true,
+            ..TimerConfig::default()
+        };
         // Saved with 30s remaining, 3600s ago -> should have advanced at least one focus
         let snap = TimerSnapshot {
             version: 1,

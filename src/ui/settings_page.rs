@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::prelude::*;
 
@@ -82,7 +83,10 @@ where
     append_row(&timer_group, "Long break", &long_box, true);
 
     let cycles_spin = spin(1.0, 12.0, cfg.timer.cycles_before_long_break as f64);
-    append_row(&timer_group, "Sessions before long break", &cycles_spin, false);
+    append_row(&timer_group, "Sessions before long break", &cycles_spin, true);
+
+    let cycle_target_spin = spin(0.0, 20.0, cfg.timer.cycle_target as f64);
+    append_row(&timer_group, "Daily cycle target (0 = off)", &cycle_target_spin, false);
 
     page.append(&timer_group);
 
@@ -203,7 +207,7 @@ where
     page.append(&theme_group);
 
     // ── Persistence ─────────────────────────────────────────────────────────
-    let save_config = gtk4::glib::clone!(
+    let save_config: Rc<dyn Fn()> = Rc::new(gtk4::glib::clone!(
         #[strong]
         config,
         #[strong]
@@ -214,7 +218,11 @@ where
             }
             on_change();
         }
-    );
+    ));
+    // Continuous controls (spins, opacity slider) write through a debouncer so
+    // a drag/click-hold results in one atomic write + one theme reload instead
+    // of one per frame. The window flushes any pending save on close.
+    let save_debounced = debounce(Duration::from_millis(300), Rc::clone(&save_config));
 
     // Guard to avoid feedback loops between preset toggles and spins.
     let guard = Rc::new(RefCell::new(false));
@@ -356,12 +364,12 @@ where
     );
 
     macro_rules! bind_spin {
-        ($spin:expr, $field:ident, $sub:ident) => {
+        ($spin:expr, $field:ident, $sub:ident, $save:ident) => {
             $spin.connect_value_changed(gtk4::glib::clone!(
                 #[strong]
                 config,
                 #[strong]
-                save_config,
+                $save,
                 #[strong]
                 guard,
                 #[strong]
@@ -372,15 +380,16 @@ where
                     }
                     config.borrow_mut().$sub.$field = s.value() as u32;
                     sync_preset();
-                    save_config();
+                    $save();
                 }
             ));
         };
     }
-    bind_spin!(focus_spin, focus_minutes, timer);
-    bind_spin!(short_spin, short_break_minutes, timer);
-    bind_spin!(long_spin, long_break_minutes, timer);
-    bind_spin!(cycles_spin, cycles_before_long_break, timer);
+    bind_spin!(focus_spin, focus_minutes, timer, save_debounced);
+    bind_spin!(short_spin, short_break_minutes, timer, save_debounced);
+    bind_spin!(long_spin, long_break_minutes, timer, save_debounced);
+    bind_spin!(cycles_spin, cycles_before_long_break, timer, save_debounced);
+    bind_spin!(cycle_target_spin, cycle_target, timer, save_debounced);
 
     macro_rules! bind_switch {
         ($sw:expr, $field:ident, $sub:ident) => {
@@ -420,14 +429,14 @@ where
         #[strong]
         config,
         #[strong]
-        save_config,
+        save_debounced,
         #[weak]
         opacity_val,
         move |scale| {
             let v = scale.value();
             config.borrow_mut().window.opacity = v;
             opacity_val.set_label(&format!("{:.0}%", v * 100.0));
-            save_config();
+            save_debounced();
         }
     ));
     opacity_reset.connect_clicked(gtk4::glib::clone!(
@@ -496,4 +505,22 @@ fn append_row(group: &gtk4::Box, label: &str, widget: &impl IsA<gtk4::Widget>, s
     row.append(&lbl);
     row.append(widget);
     group.append(&row);
+}
+
+/// Coalesce rapid calls to `f`: each call cancels any pending invocation and
+/// schedules a new one `delay` after the last call.
+fn debounce(delay: Duration, f: Rc<dyn Fn()>) -> Rc<dyn Fn()> {
+    let state: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+    Rc::new(move || {
+        if let Some(id) = state.borrow_mut().take() {
+            id.remove();
+        }
+        let f = Rc::clone(&f);
+        let state_inner = Rc::clone(&state);
+        let id = glib::timeout_add_local_once(delay, move || {
+            *state_inner.borrow_mut() = None;
+            f();
+        });
+        *state.borrow_mut() = Some(id);
+    })
 }

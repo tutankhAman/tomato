@@ -447,50 +447,46 @@ pub fn build(app: &libadwaita::Application) {
     stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
     stack.set_transition_duration(140);
 
-    let timer = Rc::new(RefCell::new({
+    let (timer, saved_before) = {
         let cfg = config.borrow();
-        if let Some(snap) = crate::timer::load_timer_snapshot() {
-            let before_completed = snap.completed_focus_sessions;
-            let before_phase = snap.phase;
-            let restored = crate::timer::Timer::restore(snap, &cfg.timer);
-            // If a focus session completed while the app was closed, attribute it.
-            // Defer store mutation until tasks is available (below); stash count via cfg clone.
-            // Instead handle after tasks is loaded (see below).
-            let _ = (before_completed, before_phase);
-            restored
-        } else {
-            Timer::new(&cfg.timer)
+        match crate::timer::load_timer_snapshot() {
+            Some(snap) => {
+                let before_completed = snap.completed_focus_sessions;
+                let before_phase = snap.phase;
+                (Timer::restore(snap, &cfg.timer), Some((before_completed, before_phase)))
+            }
+            None => (Timer::new(&cfg.timer), None),
         }
-    }));
+    };
+    let timer = Rc::new(RefCell::new(timer));
     let tasks = Rc::new(RefCell::new(TodoStore::load()));
     // Attribute any focus sessions that completed while the app was closed.
-    {
-        if let Some(snap) = crate::timer::load_timer_snapshot() {
-            let before = snap.completed_focus_sessions;
-            let after = timer.borrow().completed_focus_sessions();
-            if after > before {
-                let increments = after - before;
+    if let Some((before_completed, before_phase)) = saved_before {
+        let after = timer.borrow().completed_focus_sessions();
+        if after > before_completed {
+            let increments = after - before_completed;
+            {
                 let mut store = tasks.borrow_mut();
-                let active_before = store.active_task().map(|t| t.id.clone());
                 for _ in 0..increments {
                     store.increment_active_pomodoro();
                 }
-                if store.active_task().map(|t| t.id.clone()) != active_before || increments > 0 {
-                    let _ = store.save();
-                }
-                // Notify once if we landed in a break after a completed focus.
-                let cfg = config.borrow();
-                if cfg.notifications.enabled
-                    && matches!(timer.borrow().phase(), crate::timer::Phase::ShortBreak | crate::timer::Phase::LongBreak)
-                    && snap.phase == crate::timer::Phase::Focus
-                {
-                    let (summary, body) = if timer.borrow().phase() == crate::timer::Phase::LongBreak {
-                        ("Session finished", "Great job — enjoy a long break.")
-                    } else {
-                        ("Focus complete", "Nice work. Take a short break.")
-                    };
-                    crate::notify::notify(summary, body);
-                }
+            }
+            let _ = tasks.borrow().save();
+            // Notify once if we landed in a break after a completed focus.
+            let cfg = config.borrow();
+            if cfg.notifications.enabled
+                && matches!(
+                    timer.borrow().phase(),
+                    crate::timer::Phase::ShortBreak | crate::timer::Phase::LongBreak
+                )
+                && before_phase == crate::timer::Phase::Focus
+            {
+                let (summary, body) = if timer.borrow().phase() == crate::timer::Phase::LongBreak {
+                    ("Session finished", "Great job — enjoy a long break.")
+                } else {
+                    ("Focus complete", "Nice work. Take a short break.")
+                };
+                crate::notify::notify(summary, body);
             }
         }
     }
@@ -703,10 +699,16 @@ pub fn build(app: &libadwaita::Application) {
     window.connect_close_request(gtk4::glib::clone!(
         #[strong]
         timer,
+        #[strong]
+        config,
         move |_| {
             let snap = timer.borrow().snapshot();
             if let Err(e) = crate::timer::save_timer_snapshot(&snap) {
                 eprintln!("tomato: failed to save timer state on close: {e}");
+            }
+            // Flush any pending debounced config writes (opacity slider, spins).
+            if let Err(e) = config.borrow().save() {
+                eprintln!("tomato: failed to save config on close: {e}");
             }
             gtk4::glib::Propagation::Proceed
         }

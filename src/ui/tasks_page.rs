@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use gtk4::prelude::*;
 
@@ -52,13 +52,16 @@ pub fn build(store: Rc<RefCell<TodoStore>>) -> gtk4::Widget {
 
     type RebuildFn = dyn Fn();
     // ── Rebuild ─────────────────────────────────────────────────────────────
-    // Shared rebuild closure: interior cell avoids self-capture cycle during init.
-    #[allow(clippy::type_complexity)]
+    // Shared rebuild closure. Rows need a callback to trigger a rebuild, but
+    // the closure also creates the rows — a direct self-capture would be an Rc
+    // reference cycle. Instead the closure holds the cell weakly and the cell
+    // holds only a weak ref back; the closure's own strong capture keeps the
+    // cell alive, so both are dropped together when the page dies.
     let update_ui: Rc<RebuildFn> = {
         let store_c = Rc::clone(&store);
         let list_c = list.clone();
         let clear_c = clear_btn.clone();
-        let cell: Rc<RefCell<Option<Rc<RebuildFn>>>> = Rc::new(RefCell::new(None));
+        let cell: Rc<RefCell<Option<Weak<RebuildFn>>>> = Rc::new(RefCell::new(None));
         let cell_clone = Rc::clone(&cell);
         let mk: Rc<RebuildFn> = Rc::new(move || {
             while let Some(child) = list_c.first_child() {
@@ -67,7 +70,7 @@ pub fn build(store: Rc<RefCell<TodoStore>>) -> gtk4::Widget {
             let s = store_c.borrow();
             let mut items = s.items.clone();
             items.sort_by_key(|t| t.done);
-            let cb = cell_clone.borrow().clone();
+            let cb = cell_clone.borrow().as_ref().and_then(|w| w.upgrade());
             for todo in &items {
                 let is_active = s.active_id.as_deref() == Some(&todo.id);
                 let row = if let Some(ref f) = cb {
@@ -79,7 +82,7 @@ pub fn build(store: Rc<RefCell<TodoStore>>) -> gtk4::Widget {
             }
             clear_c.set_visible(items.iter().any(|t| t.done));
         });
-        *cell.borrow_mut() = Some(Rc::clone(&mk));
+        *cell.borrow_mut() = Some(Rc::downgrade(&mk));
         mk
     };
 

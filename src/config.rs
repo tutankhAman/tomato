@@ -23,6 +23,9 @@ fn default_auto_start_breaks() -> bool {
 fn default_auto_start_focus() -> bool {
     false
 }
+fn default_cycle_target() -> u32 {
+    0
+}
 
 fn default_notifications_enabled() -> bool {
     true
@@ -55,6 +58,9 @@ pub struct TimerConfig {
     pub auto_start_breaks: bool,
     #[serde(default = "default_auto_start_focus")]
     pub auto_start_focus: bool,
+    /// Daily goal of completed cycles; 0 disables the target (counts only).
+    #[serde(default = "default_cycle_target")]
+    pub cycle_target: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -96,6 +102,7 @@ impl Default for TimerConfig {
             cycles_before_long_break: default_cycles_before_long_break(),
             auto_start_breaks: default_auto_start_breaks(),
             auto_start_focus: default_auto_start_focus(),
+            cycle_target: default_cycle_target(),
         }
     }
 }
@@ -189,6 +196,7 @@ mod tests {
         assert_eq!(cfg.timer.cycles_before_long_break, 4);
         assert!(cfg.timer.auto_start_breaks);
         assert!(!cfg.timer.auto_start_focus);
+        assert_eq!(cfg.timer.cycle_target, 0);
         assert!(cfg.notifications.enabled);
         assert_eq!(cfg.window.anchor, "top-right");
         assert_eq!(cfg.window.margin_x, 16);

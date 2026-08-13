@@ -1,6 +1,6 @@
 [package]
 name = "tomato"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2024"
 description = "A sticky, always-on-top Pomodoro timer and todo tracker for Linux"
 license = "MIT"
