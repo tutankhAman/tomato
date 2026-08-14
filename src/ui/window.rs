@@ -68,11 +68,12 @@ fn drag_sign_y(corner: Corner) -> i32 {
 #[derive(Default)]
 struct DragState {
     active: bool,
-    start_margin_x: i32,
-    start_margin_y: i32,
+    has_moved: bool,
     corner: Corner,
-    pending: Option<(i32, i32)>,
-    tick: Option<gtk4::TickCallbackId>,
+    start_mx: i32,
+    start_my: i32,
+    press_sx: f64,
+    press_sy: f64,
 }
 
 pub fn build(app: &libadwaita::Application) {
@@ -255,26 +256,28 @@ pub fn build(app: &libadwaita::Application) {
             });
         })
     };
+    // Use `released` instead of `pressed` so `GestureDrag` has a chance
+    // to set `has_moved` before we decide to toggle — fixes the "hold
+    // then drag toggles the dropdown" glitch.
     let pill_click = gtk4::GestureClick::new();
     pill_click.set_button(1);
     pill_click.set_propagation_phase(gtk4::PropagationPhase::Bubble);
-    pill_click.connect_pressed(gtk4::glib::clone!(
+    pill_click.connect_released(gtk4::glib::clone!(
         #[strong] toggle,
         #[weak] close_btn,
         #[weak] drag_handle,
         #[weak] pill,
+        #[strong] drag_state,
         move |_, n_press, x, y| {
-            if n_press != 1 {
+            if n_press != 1 { return; }
+            if drag_state.borrow().has_moved {
                 return;
             }
-            // Clicks on the close button or drag handle must not toggle the dropdown.
             if let Some(target) = pill.pick(x, y, gtk4::PickFlags::DEFAULT) {
                 let is_descendant = |ancestor: &gtk4::Widget| {
                     let mut cur = Some(target.clone());
                     while let Some(w) = cur {
-                        if &w == ancestor {
-                            return true;
-                        }
+                        if &w == ancestor { return true; }
                         cur = w.parent();
                     }
                     false
@@ -312,103 +315,217 @@ pub fn build(app: &libadwaita::Application) {
 
     crate::ui::tray::spawn(tx);
 
-    // Drag gesture for layer-shell live movement. Margins are derived from the
-    // pointer's current widget coords and the window's current margin on every
-    // event, throttled to one set_margin per compositor frame via a tick
-    // callback, so requested == applied and every delta lands on the pointer.
-    let drag = gtk4::GestureDrag::new();
-    drag.connect_drag_begin(gtk4::glib::clone!(
-        #[strong]
-        drag_state,
-        #[weak]
-        window,
-        #[strong]
-        on_layer_shell,
-        move |_g, _x, _y| {
-            let mut s = drag_state.borrow_mut();
-            if !on_layer_shell || s.corner == Corner::Center {
+    // Drag for layer-shell: move the surface via anchored margins.
+    // Fixes for the jitter/lag reported on Wayland:
+    //   1. `GestureDrag`'s widget-local dx/dy is computed against the drag's
+    //      *start* widget origin. When we move a layer-shell surface the widget
+    //      moves with it, so dx collapses — that's the feedback loop that makes
+    //      the pill lag and then snap. We track the pointer in *surface-local*
+    //      coordinates (`GdkDevice::surface_at_position`) instead and use the
+    //      surface error `cur - press` (0 when the handle is glued to the
+    //      pointer).
+    //   2. `window.margin()` reflects the compositor-committed value, so the next
+    //      target is `actual + sign * error` (not `start + sign*(cur-press)`,
+    //      which halves each frame because the error shrinks as the window
+    //      catches up). This eliminates the "half-speed" integration jitter.
+    //   3. At most one `set_margin` per frame (tick coalescence) and HiDPI
+    //      correction (`scale_factor`). Threshold lowered to 2px to remove GTK's
+    //      default 8px drag threshold (the initial friction).
+    if let Some(settings) = gtk4::Settings::default() {
+        if settings.gtk_dnd_drag_threshold() > 2 {
+            settings.set_gtk_dnd_drag_threshold(2);
+        }
+    }
+    drag_handle.set_cursor_from_name(Some("grab"));
+    // Surface-local pointer tracker — None when the pointer left our surface
+    // (fast fling); caller falls back to the gesture's widget coords.
+    let surface_pos = Rc::new({
+        let window = window.clone();
+        move || -> Option<(f64, f64)> {
+            let display = gdk4::Display::default()?;
+            let seat = display.default_seat()?;
+            let dev = seat.pointer()?;
+            let (surf, sx, sy) = dev.surface_at_position();
+            let win_surf = window.surface()?;
+            if surf.as_ref() == Some(&win_surf) {
+                Some((sx, sy))
+            } else {
+                None
+            }
+        }
+    });
+    // Single tick coalescer — coalesce motion events to the compositor frame
+    // clock so we don't fire `set_margin` faster than the surface can commit.
+    let pending: Rc<RefCell<Option<(i32, i32)>>> = Rc::new(RefCell::new(None));
+    let tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>> = Rc::new(RefCell::new(None));
+    let ensure_tick = {
+        let window = window.clone();
+        let pending = Rc::clone(&pending);
+        let tick_id = Rc::clone(&tick_id);
+        let drag_state = Rc::clone(&drag_state);
+        Rc::new(move || {
+            if tick_id.borrow().is_some() {
                 return;
             }
-            s.active = true;
-            if let (Some(h), Some(v)) = (h_edge(s.corner), v_edge(s.corner)) {
-                s.start_margin_x = window.margin(h);
-                s.start_margin_y = window.margin(v);
-            }
-            s.pending = None;
-            if s.tick.is_none() {
-                let tick = window.add_tick_callback(gtk4::glib::clone!(
-                    #[strong]
-                    drag_state,
-                    #[weak]
-                    window,
-                    #[upgrade_or]
-                    gtk4::glib::ControlFlow::Continue,
-                    move |_, _frame_clock| {
-                        let mut s = drag_state.borrow_mut();
-                        if let (Some(h), Some(v)) = (h_edge(s.corner), v_edge(s.corner))
-                            && let Some((mx, my)) = s.pending.take()
+            let id = window.add_tick_callback(gtk4::glib::clone!(
+                #[strong] pending,
+                #[strong] drag_state,
+                #[weak] window,
+                #[upgrade_or] gtk4::glib::ControlFlow::Continue,
+                move |_, _| {
+                    if let Some((mx, my)) = pending.borrow_mut().take() {
+                        if let (Some(h), Some(v)) = (h_edge(drag_state.borrow().corner), v_edge(drag_state.borrow().corner))
                         {
                             window.set_margin(h, mx);
                             window.set_margin(v, my);
                         }
-                        if s.active {
-                            gtk4::glib::ControlFlow::Continue
-                        } else {
-                            gtk4::glib::ControlFlow::Break
-                        }
                     }
-                ));
-                s.tick = Some(tick);
+                    if drag_state.borrow().active {
+                        gtk4::glib::ControlFlow::Continue
+                    } else {
+                        gtk4::glib::ControlFlow::Break
+                    }
+                }
+            ));
+            *tick_id.borrow_mut() = Some(id);
+        })
+    };
+    let drag = gtk4::GestureDrag::new();
+    drag.set_button(gdk4::BUTTON_PRIMARY as u32);
+    drag.connect_drag_begin(gtk4::glib::clone!(
+        #[strong] drag_state,
+        #[weak] window,
+        #[strong] on_layer_shell,
+        #[weak] drag_handle,
+        #[strong] surface_pos,
+        #[strong] pending,
+        move |_g, gx, gy| {
+            if !on_layer_shell || drag_state.borrow().corner == Corner::Center {
+                return;
             }
+            let (px, py) = surface_pos().unwrap_or((gx, gy));
+            let mut s = drag_state.borrow_mut();
+            s.active = true;
+            s.has_moved = false;
+            s.start_mx = window.margin(h_edge(s.corner).unwrap());
+            // v may equal h when corner is Center — already excluded — so safe to
+            // read separately via h/v; keep one read path for clarity.
+            let v = v_edge(s.corner).unwrap();
+            s.start_my = window.margin(v);
+            s.press_sx = px;
+            s.press_sy = py;
+            *pending.borrow_mut() = None;
+            drag_handle.set_cursor_from_name(Some("grabbing"));
         }
     ));
-    drag.connect_drag_update(gtk4::glib::clone!(
-        #[strong]
-        drag_state,
-        #[strong]
-        on_layer_shell,
-        move |_g, dx, dy| {
+    // Install the tick on first motion so the surface already exists.
+    let drag_update = {
+        let drag_state = Rc::clone(&drag_state);
+        let window = window.clone();
+        let surface_pos = Rc::clone(&surface_pos);
+        let pending = Rc::clone(&pending);
+        let ensure_tick = Rc::clone(&ensure_tick);
+        move |_g: &gtk4::GestureDrag, dx: f64, dy: f64| {
             let mut s = drag_state.borrow_mut();
             if !on_layer_shell || !s.active || s.corner == Corner::Center {
                 return;
             }
-            let margin_x =
-                (s.start_margin_x as f64 + dx * drag_sign_x(s.corner) as f64).round().max(0.0) as i32;
-            let margin_y =
-                (s.start_margin_y as f64 + dy * drag_sign_y(s.corner) as f64).round().max(0.0) as i32;
-            s.pending = Some((margin_x, margin_y));
-        }
-    ));
-    drag.connect_drag_end(gtk4::glib::clone!(
-        #[strong]
-        drag_state,
-        #[weak]
-        window,
-        #[strong]
-        config,
-        #[strong]
-        on_layer_shell,
-        move |_g, _dx, _dy| {
-            let mut s = drag_state.borrow_mut();
-            if !on_layer_shell || !s.active || s.corner == Corner::Center {
+            let Some(h) = h_edge(s.corner) else { return; };
+            let Some(v) = v_edge(s.corner) else { return; };
+            let (cur_sx, cur_sy, use_surface) = if let Some((sx, sy)) = surface_pos() {
+                (sx, sy, true)
+            } else {
+                (s.press_sx + dx, s.press_sy + dy, false)
+            };
+            let err_x = cur_sx - s.press_sx;
+            let err_y = cur_sy - s.press_sy;
+            if !s.has_moved && err_x.hypot(err_y) < 1.8 {
                 return;
             }
-            s.active = false;
-            if let Some(id) = s.tick.take() {
+            s.has_moved = true;
+            let scale = window
+                .surface()
+                .map(|surf| surf.scale_factor() as f64)
+                .unwrap_or(1.0)
+                .max(1.0);
+            let err_x_logical = if use_surface { err_x / scale } else { err_x };
+            let err_y_logical = if use_surface { err_y / scale } else { err_y };
+            // Correct 1:1 tracking: global delta = err + sign*(actual - start)
+            // ⇒ target = actual + sign*err (not start+sign*err, which halves).
+            let mx = (window.margin(h) as f64 + err_x_logical * drag_sign_x(s.corner) as f64)
+                .round().max(0.0).min(4000.0) as i32;
+            let my = (window.margin(v) as f64 + err_y_logical * drag_sign_y(s.corner) as f64)
+                .round().max(0.0).min(4000.0) as i32;
+            *pending.borrow_mut() = Some((mx, my));
+            drop(s);
+            ensure_tick();
+        }
+    };
+    drag.connect_drag_update(gtk4::glib::clone!(#[strong] drag_update, move |a,b,c| drag_update(a,b,c)));
+    let drag_handle_end = drag_handle.clone();
+    let do_end = {
+        let drag_state = Rc::clone(&drag_state);
+        let window = window.clone();
+        let pending = Rc::clone(&pending);
+        let tick_id = Rc::clone(&tick_id);
+        let config = Rc::clone(&config);
+        let drag_handle = drag_handle_end.clone();
+        Rc::new(move || {
+            // Fast path: flush any coalesced pending before tearing down the tick.
+            if let Some((mx, my)) = pending.borrow_mut().take() {
+                if let (Some(h), Some(v)) = (h_edge(drag_state.borrow().corner), v_edge(drag_state.borrow().corner)) {
+                    window.set_margin(h, mx);
+                    window.set_margin(v, my);
+                }
+            }
+            if let Some(id) = tick_id.borrow_mut().take() {
                 id.remove();
             }
-            if let (Some(h), Some(v)) = (h_edge(s.corner), v_edge(s.corner)) {
-                let (margin_x, margin_y) =
-                    s.pending.take().unwrap_or_else(|| (window.margin(h), window.margin(v)));
-                window.set_margin(h, margin_x);
-                window.set_margin(v, margin_y);
+            drag_handle.set_cursor_from_name(Some("grab"));
+            if !on_layer_shell || drag_state.borrow().corner == Corner::Center {
+                drag_state.borrow_mut().active = false;
+                drag_state.borrow_mut().has_moved = false;
+                return;
+            }
+            let had_move = drag_state.borrow().has_moved;
+            drag_state.borrow_mut().active = false;
+            if !had_move {
+                return;
+            }
+            if let (Some(h), Some(v)) = (h_edge(drag_state.borrow().corner), v_edge(drag_state.borrow().corner)) {
+                let mx = window.margin(h);
+                let my = window.margin(v);
                 let mut cfg = config.borrow_mut();
-                cfg.window.margin_x = margin_x;
-                cfg.window.margin_y = margin_y;
+                cfg.window.margin_x = mx;
+                cfg.window.margin_y = my;
+                if let Err(e) = cfg.save() {
+                    eprintln!("tomato: failed to save config: {e}");
+                }
+                drop(cfg);
+                let st = Rc::clone(&drag_state);
+                gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(350), move || {
+                    st.borrow_mut().has_moved = false;
+                });
+            } else {
+                drag_state.borrow_mut().has_moved = false;
             }
-            if let Err(e) = config.borrow().save() {
-                eprintln!("tomato: failed to save config: {e}");
-            }
+        })
+    };
+    drag.connect_drag_end(gtk4::glib::clone!(#[strong] do_end, move |_,_,_| do_end()));
+    drag.connect_cancel(gtk4::glib::clone!(
+        #[strong] drag_state,
+        #[strong] pending,
+        #[strong] tick_id,
+        #[weak] drag_handle,
+        move |_, _seq| {
+            drag_handle.set_cursor_from_name(Some("grab"));
+            *pending.borrow_mut() = None;
+            if let Some(id) = tick_id.borrow_mut().take() { id.remove(); }
+            drag_state.borrow_mut().active = false;
+            let st = Rc::clone(&drag_state);
+            gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(350), move || {
+                st.borrow_mut().has_moved = false;
+            });
         }
     ));
     drag_handle.add_controller(drag);
